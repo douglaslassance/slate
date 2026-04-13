@@ -2,17 +2,17 @@ import { mkdtemp, rm, readFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { Notice, Plugin, TFile, normalizePath } from "obsidian";
-import { DEFAULT_SETTINGS, SpearSettings, SpearSettingTab } from "./settings";
+import { DEFAULT_SETTINGS, SlateSettings, SlateSettingTab } from "./settings";
 import { generateShotBreakdown, Shot } from "./ollama";
 import { generateStoryboardImages } from "./mflux";
 import { tileImages } from "./tile";
 
-export default class SpearPlugin extends Plugin {
-	settings: SpearSettings;
+export default class SlatePlugin extends Plugin {
+	settings: SlateSettings;
 
 	async onload() {
 		await this.loadSettings();
-		this.addSettingTab(new SpearSettingTab(this.app, this));
+		this.addSettingTab(new SlateSettingTab(this.app, this));
 
 		// ── Command: Generate shot breakdown ─────────────────────────
 		this.addCommand({
@@ -21,17 +21,17 @@ export default class SpearPlugin extends Plugin {
 			callback: async () => {
 				const activeFile = this.app.workspace.getActiveFile();
 				if (!activeFile) {
-					new Notice("Spear: No active file.");
+					new Notice("Slate: No active file.");
 					return;
 				}
 
 				const scriptText = (await this.app.vault.read(activeFile)).trim();
 				if (!scriptText) {
-					new Notice("Spear: The current note is empty.");
+					new Notice("Slate: The current note is empty.");
 					return;
 				}
 
-				const notice = new Notice("Spear: Generating shot breakdown…", 0);
+				const notice = new Notice("Slate: Generating shot breakdown…", 0);
 
 				let shots: Shot[];
 				try {
@@ -39,12 +39,12 @@ export default class SpearPlugin extends Plugin {
 						this.settings.ollamaHost,
 						this.settings.ollamaModel,
 						scriptText,
-						(msg) => notice.setMessage(`Spear: ${msg}`)
+						(msg) => notice.setMessage(`Slate: ${msg}`)
 					);
 				} catch (err) {
 					notice.hide();
-					new Notice(`Spear error: ${err instanceof Error ? err.message : String(err)}`, 8000);
-					console.error("[Spear]", err);
+					new Notice(`Slate error: ${err instanceof Error ? err.message : String(err)}`, 8000);
+					console.error("[Slate]", err);
 					return;
 				}
 
@@ -68,7 +68,7 @@ export default class SpearPlugin extends Plugin {
 				}
 
 				await this.app.workspace.getLeaf(false).openFile(breakdownFile);
-				new Notice(`Spear: Shot breakdown complete — ${shots.length} shots.`);
+				new Notice(`Slate: Shot breakdown complete — ${shots.length} shots.`);
 			},
 		});
 
@@ -79,7 +79,7 @@ export default class SpearPlugin extends Plugin {
 			callback: async () => {
 				const activeFile = this.app.workspace.getActiveFile();
 				if (!activeFile) {
-					new Notice("Spear: No active file.");
+					new Notice("Slate: No active file.");
 					return;
 				}
 
@@ -88,16 +88,16 @@ export default class SpearPlugin extends Plugin {
 
 				if (shots.length === 0) {
 					new Notice(
-						'Spear: No shot breakdown table found. Run "Generate shot breakdown" first.',
+						'Slate: No shot breakdown table found. Run "Generate shot breakdown" first.',
 						6000
 					);
 					return;
 				}
 
-				const notice = new Notice("Spear: Generating storyboard…", 0);
+				const notice = new Notice("Slate: Generating storyboard…", 0);
 
 				// Work entirely in a temp directory — nothing permanent until tiling is done.
-				const tempDir = await mkdtemp(join(tmpdir(), "spear-"));
+				const tempDir = await mkdtemp(join(tmpdir(), "slate-"));
 
 				try {
 					// 1. Generate individual shot images into the temp dir.
@@ -105,11 +105,11 @@ export default class SpearPlugin extends Plugin {
 						shots,
 						tempDir,
 						this.settings,
-						(msg, i, total) => notice.setMessage(`Spear: ${msg} (${i + 1}/${total})`)
+						(msg, i, total) => notice.setMessage(`Slate: ${msg} (${i + 1}/${total})`)
 					);
 
 					// 2. Tile into a single contact sheet.
-					notice.setMessage("Spear: Compositing contact sheet…");
+					notice.setMessage("Slate: Compositing contact sheet…");
 					const tempTilePath = join(tempDir, "storyboard.png");
 					await tileImages(
 						images.map((img) => img.filePath),
@@ -132,11 +132,11 @@ export default class SpearPlugin extends Plugin {
 					}
 
 					notice.hide();
-					new Notice(`Spear: Storyboard ready — ${shots.length} shots tiled.`);
+					new Notice(`Slate: Storyboard ready — ${shots.length} shots tiled.`);
 				} catch (err) {
 					notice.hide();
-					new Notice(`Spear error: ${err instanceof Error ? err.message : String(err)}`, 8000);
-					console.error("[Spear]", err);
+					new Notice(`Slate error: ${err instanceof Error ? err.message : String(err)}`, 8000);
+					console.error("[Slate]", err);
 				} finally {
 					// 5. Always clean up temp files.
 					await rm(tempDir, { recursive: true, force: true });
