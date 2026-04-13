@@ -1,7 +1,7 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { Shot } from "./ollama";
-import type { SpearSettings } from "./settings";
+import type { SlateSettings } from "./settings";
 
 const execFileAsync = promisify(execFile);
 
@@ -15,7 +15,7 @@ export interface GeneratedImage {
  * Build the mflux-generate-flux2 CLI argument string for a single shot.
  * Arguments are shell-escaped so paths/prompts with spaces are safe.
  */
-function buildCommand(executable: string, settings: SpearSettings, prompt: string, outputPath: string): string {
+function buildCommand(executable: string, settings: SlateSettings, prompt: string, outputPath: string): string {
 
 	const args: [string, string][] = [
 		["--model", settings.mfluxModel],
@@ -50,14 +50,14 @@ async function resolveMfluxExecutable(override: string): Promise<string> {
 
 	try {
 		const { stdout: pathOut } = await execFileAsync("/bin/zsh", ["-l", "-c", "echo $PATH"], { timeout: 5000 });
-		console.log("[Spear] Shell PATH:", pathOut.trim());
+		console.log("[Slate] Shell PATH:", pathOut.trim());
 
 		const { stdout: which } = await execFileAsync("/bin/zsh", ["-l", "-c", "which mflux-generate-flux2"], { timeout: 5000 });
 		const resolved = which.trim();
-		console.log("[Spear] Resolved mflux-generate-flux2:", resolved);
+		console.log("[Slate] Resolved mflux-generate-flux2:", resolved);
 		return resolved || "mflux-generate-flux2";
 	} catch (err) {
-		console.warn("[Spear] Could not resolve mflux-generate-flux2 via login shell:", err);
+		console.warn("[Slate] Could not resolve mflux-generate-flux2 via login shell:", err);
 		return "mflux-generate-flux2";
 	}
 }
@@ -69,7 +69,7 @@ async function resolveMfluxExecutable(override: string): Promise<string> {
 export async function generateStoryboardImages(
 	shots: Shot[],
 	outputDir: string,
-	settings: SpearSettings,
+	settings: SlateSettings,
 	onProgress?: (message: string, index: number, total: number) => void
 ): Promise<GeneratedImage[]> {
 	const results: GeneratedImage[] = [];

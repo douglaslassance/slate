@@ -1,7 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
-import type SpearPlugin from "./main";
+import type SlatePlugin from "./main";
 
-export interface SpearSettings {
+export interface SlateSettings {
 	// Ollama settings
 	ollamaHost: string;
 	ollamaModel: string;
@@ -17,7 +17,7 @@ export interface SpearSettings {
 
 }
 
-export const DEFAULT_SETTINGS: SpearSettings = {
+export const DEFAULT_SETTINGS: SlateSettings = {
 	ollamaHost: "http://localhost:11434",
 	ollamaModel: "mistral:latest",
 	mfluxExecutable: "",
@@ -29,10 +29,10 @@ export const DEFAULT_SETTINGS: SpearSettings = {
 	mfluxQuantize: 8,
 };
 
-export class SpearSettingTab extends PluginSettingTab {
-	plugin: SpearPlugin;
+export class SlateSettingTab extends PluginSettingTab {
+	plugin: SlatePlugin;
 
-	constructor(app: App, plugin: SpearPlugin) {
+	constructor(app: App, plugin: SlatePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}

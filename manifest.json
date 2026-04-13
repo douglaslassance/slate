@@ -1,6 +1,6 @@
 {
-	"id": "spear",
-	"name": "Spear",
+	"id": "slate",
+	"name": "Slate",
 	"version": "0.1.0",
 	"minAppVersion": "1.4.0",
 	"description": "Generate shot breakdowns from scripts using Ollama, then create storyboard images using mflux.",
