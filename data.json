@@ -1,0 +1,12 @@
+{
+  "ollamaHost": "http://localhost:11434",
+  "ollamaModel": "mistral:latest",
+  "mfluxExecutable": "",
+  "mfluxPromptHeader": "Black and white pencil sketches, dynamic anime style.",
+  "mfluxModel": "flux2-klein-4b",
+  "mfluxSteps": 8,
+  "mfluxWidth": 320,
+  "mfluxHeight": 180,
+  "mfluxQuantize": 8,
+  "outputFolder": "Storyboards"
+}

@@ -1,7 +1,7 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { Shot } from "./ollama";
-import type { PompeiSettings } from "./settings";
+import type { SpearSettings } from "./settings";
 
 const execFileAsync = promisify(execFile);
 
@@ -12,49 +12,68 @@ export interface GeneratedImage {
 }
 
 /**
- * Build the mflux-generate CLI argument list for a single shot.
+ * Build the mflux-generate-flux2 CLI argument string for a single shot.
+ * Arguments are shell-escaped so paths/prompts with spaces are safe.
  */
-function buildArgs(
-	settings: PompeiSettings,
-	prompt: string,
-	outputPath: string,
-	seed?: number
-): string[] {
-	const args: string[] = [
-		"--model", settings.mfluxModel,
-		"--prompt", prompt,
-		"--output", outputPath,
-		"--steps", String(settings.mfluxSteps),
-		"--width", String(settings.mfluxWidth),
-		"--height", String(settings.mfluxHeight),
+function buildCommand(executable: string, settings: SpearSettings, prompt: string, outputPath: string): string {
+
+	const args: [string, string][] = [
+		["--model", settings.mfluxModel],
+		["--prompt", prompt],
+		["--output", outputPath],
+		["--steps", String(settings.mfluxSteps)],
+		["--width", String(settings.mfluxWidth)],
+		["--height", String(settings.mfluxHeight)],
 	];
 
 	if (settings.mfluxQuantize !== null) {
-		args.push("--quantize", String(settings.mfluxQuantize));
+		args.push(["--quantize", String(settings.mfluxQuantize)]);
 	}
 
-	if (seed !== undefined) {
-		args.push("--seed", String(seed));
-	}
+	const argStr = args
+		.map(([flag, value]) => `${flag} ${shellEscape(value)}`)
+		.join(" ");
 
-	return args;
+	return `${shellEscape(executable)} ${argStr}`;
+}
+
+function shellEscape(value: string): string {
+	return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 /**
- * Generate storyboard images for a list of shots using mflux-generate.
- *
- * @param shots       Array of shots from the Ollama breakdown.
- * @param outputDir   Absolute directory path where images will be written.
- * @param settings    Plugin settings (model, steps, resolution, …).
- * @param onProgress  Optional callback receiving a status message per shot.
+ * Resolve the full path of mflux-generate-flux2 via a login shell.
+ * Logs the resolved path and shell PATH for diagnostics.
+ */
+async function resolveMfluxExecutable(override: string): Promise<string> {
+	if (override) return override;
+
+	try {
+		const { stdout: pathOut } = await execFileAsync("/bin/zsh", ["-l", "-c", "echo $PATH"], { timeout: 5000 });
+		console.log("[Spear] Shell PATH:", pathOut.trim());
+
+		const { stdout: which } = await execFileAsync("/bin/zsh", ["-l", "-c", "which mflux-generate-flux2"], { timeout: 5000 });
+		const resolved = which.trim();
+		console.log("[Spear] Resolved mflux-generate-flux2:", resolved);
+		return resolved || "mflux-generate-flux2";
+	} catch (err) {
+		console.warn("[Spear] Could not resolve mflux-generate-flux2 via login shell:", err);
+		return "mflux-generate-flux2";
+	}
+}
+
+/**
+ * Generate storyboard images for a list of shots using mflux-generate-flux2.
+ * Runs through a login shell so the full user PATH is available.
  */
 export async function generateStoryboardImages(
 	shots: Shot[],
 	outputDir: string,
-	settings: PompeiSettings,
+	settings: SpearSettings,
 	onProgress?: (message: string, index: number, total: number) => void
 ): Promise<GeneratedImage[]> {
 	const results: GeneratedImage[] = [];
+	const executable = await resolveMfluxExecutable(settings.mfluxExecutable);
 
 	for (let i = 0; i < shots.length; i++) {
 		const shot = shots[i];
@@ -63,17 +82,19 @@ export async function generateStoryboardImages(
 
 		onProgress?.(`Generating image for shot ${shot.number}…`, i, shots.length);
 
-		const args = buildArgs(settings, shot.visualDescription, filePath);
+		const prompt = settings.mfluxPromptHeader
+			? `${settings.mfluxPromptHeader.trim()} ${shot.visualDescription}`
+			: shot.visualDescription;
+		const command = buildCommand(executable, settings, prompt, filePath);
 
 		try {
-			await execFileAsync("mflux-generate", args, {
-				// Allow up to 10 minutes per image on slow hardware.
+			// Run via zsh login shell so ~/.zshrc / ~/.zprofile PATH entries are available.
+			await execFileAsync("/bin/zsh", ["-l", "-c", command], {
 				timeout: 10 * 60 * 1000,
 			});
 		} catch (err: unknown) {
-			const msg =
-				err instanceof Error ? err.message : String(err);
-			throw new Error(`mflux-generate failed for shot ${shot.number}: ${msg}`);
+			const msg = err instanceof Error ? err.message : String(err);
+			throw new Error(`mflux-generate-flux2 failed for shot ${shot.number}: ${msg}`);
 		}
 
 		results.push({ shot, filePath });

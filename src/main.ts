@@ -1,27 +1,37 @@
-import { App, Notice, Plugin, TFolder, normalizePath } from "obsidian";
-import { DEFAULT_SETTINGS, PompeiSettings, PompeiSettingTab } from "./settings";
+import { mkdtemp, rm, readFile } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
+import { Notice, Plugin, TFile, normalizePath } from "obsidian";
+import { DEFAULT_SETTINGS, SpearSettings, SpearSettingTab } from "./settings";
 import { generateShotBreakdown, Shot } from "./ollama";
-import { generateStoryboardImages, GeneratedImage } from "./mflux";
+import { generateStoryboardImages } from "./mflux";
+import { tileImages } from "./tile";
 
-export default class PompeiPlugin extends Plugin {
-	settings: PompeiSettings;
+export default class SpearPlugin extends Plugin {
+	settings: SpearSettings;
 
 	async onload() {
 		await this.loadSettings();
-		this.addSettingTab(new PompeiSettingTab(this.app, this));
+		this.addSettingTab(new SpearSettingTab(this.app, this));
 
 		// ── Command: Generate shot breakdown ─────────────────────────
 		this.addCommand({
 			id: "generate-shot-breakdown",
 			name: "Generate shot breakdown from script",
-			editorCallback: async (editor) => {
-				const scriptText = editor.getValue().trim();
-				if (!scriptText) {
-					new Notice("The current note is empty.");
+			callback: async () => {
+				const activeFile = this.app.workspace.getActiveFile();
+				if (!activeFile) {
+					new Notice("Spear: No active file.");
 					return;
 				}
 
-				const notice = new Notice("Pompei: Generating shot breakdown…", 0);
+				const scriptText = (await this.app.vault.read(activeFile)).trim();
+				if (!scriptText) {
+					new Notice("Spear: The current note is empty.");
+					return;
+				}
+
+				const notice = new Notice("Spear: Generating shot breakdown…", 0);
 
 				let shots: Shot[];
 				try {
@@ -29,75 +39,108 @@ export default class PompeiPlugin extends Plugin {
 						this.settings.ollamaHost,
 						this.settings.ollamaModel,
 						scriptText,
-						(msg) => notice.setMessage(`Pompei: ${msg}`)
+						(msg) => notice.setMessage(`Spear: ${msg}`)
 					);
 				} catch (err) {
 					notice.hide();
-					new Notice(`Pompei error: ${err instanceof Error ? err.message : String(err)}`, 8000);
-					console.error("[Pompei]", err);
+					new Notice(`Spear error: ${err instanceof Error ? err.message : String(err)}`, 8000);
+					console.error("[Spear]", err);
 					return;
 				}
 
 				notice.hide();
 
-				// Append the breakdown as a markdown table below the script.
-				const table = buildMarkdownTable(shots);
-				const separator = "\n\n---\n\n## Shot Breakdown\n\n";
-				editor.setValue(editor.getValue() + separator + table);
+				// Create a new note next to the original: "<Script Name> - Shot Breakdown.md"
+				const baseName = activeFile.basename;
+				const folder = activeFile.parent?.path ?? "";
+				const breakdownPath = normalizePath(`${folder}/${baseName} - Shot Breakdown.md`);
 
-				new Notice(`Pompei: Shot breakdown complete — ${shots.length} shots.`);
+				const table = buildMarkdownTable(shots);
+				const content = `# ${baseName} — Shot Breakdown\n\n${table}`;
+
+				const existing = this.app.vault.getAbstractFileByPath(breakdownPath);
+				let breakdownFile: TFile;
+				if (existing instanceof TFile) {
+					await this.app.vault.modify(existing, content);
+					breakdownFile = existing;
+				} else {
+					breakdownFile = await this.app.vault.create(breakdownPath, content);
+				}
+
+				await this.app.workspace.getLeaf(false).openFile(breakdownFile);
+				new Notice(`Spear: Shot breakdown complete — ${shots.length} shots.`);
 			},
 		});
 
-		// ── Command: Generate storyboard images ──────────────────────
+		// ── Command: Generate storyboard ─────────────────────────────
 		this.addCommand({
 			id: "generate-storyboard-images",
-			name: "Generate storyboard images from shot breakdown",
-			editorCallback: async (editor) => {
-				const content = editor.getValue();
+			name: "Generate storyboard from shot breakdown",
+			callback: async () => {
+				const activeFile = this.app.workspace.getActiveFile();
+				if (!activeFile) {
+					new Notice("Spear: No active file.");
+					return;
+				}
+
+				const content = await this.app.vault.read(activeFile);
 				const shots = parseShotsFromTable(content);
 
 				if (shots.length === 0) {
 					new Notice(
-						'Pompei: No shot breakdown table found. Run "Generate shot breakdown" first.',
+						'Spear: No shot breakdown table found. Run "Generate shot breakdown" first.',
 						6000
 					);
 					return;
 				}
 
-				// Ensure output folder exists.
-				const outputFolderPath = normalizePath(this.settings.outputFolder);
-				await this.ensureFolder(outputFolderPath);
+				const notice = new Notice("Spear: Generating storyboard…", 0);
 
-				// Resolve absolute vault path for mflux (needs a real FS path).
-				const vaultBasePath = (this.app.vault.adapter as any).getBasePath?.() ?? "";
-				const outputDir = `${vaultBasePath}/${outputFolderPath}`;
+				// Work entirely in a temp directory — nothing permanent until tiling is done.
+				const tempDir = await mkdtemp(join(tmpdir(), "spear-"));
 
-				const notice = new Notice("Pompei: Generating storyboard images…", 0);
-
-				let images: GeneratedImage[];
 				try {
-					images = await generateStoryboardImages(
+					// 1. Generate individual shot images into the temp dir.
+					const images = await generateStoryboardImages(
 						shots,
-						outputDir,
+						tempDir,
 						this.settings,
-						(msg, i, total) =>
-							notice.setMessage(`Pompei: ${msg} (${i + 1}/${total})`)
+						(msg, i, total) => notice.setMessage(`Spear: ${msg} (${i + 1}/${total})`)
 					);
+
+					// 2. Tile into a single contact sheet.
+					notice.setMessage("Spear: Compositing contact sheet…");
+					const tempTilePath = join(tempDir, "storyboard.png");
+					await tileImages(
+						images.map((img) => img.filePath),
+						tempTilePath,
+						this.settings.mfluxWidth,
+						this.settings.mfluxHeight
+					);
+
+					// 3. Copy tiled image into the vault next to the breakdown file.
+					const baseName = activeFile.basename.replace(/ - Shot Breakdown$/, "");
+					const folder = activeFile.parent?.path ?? "";
+					const storyboardVaultPath = normalizePath(`${folder}/${baseName} - Storyboard.png`);
+
+					const imageBuffer = await readFile(tempTilePath);
+					const existingImg = this.app.vault.getAbstractFileByPath(storyboardVaultPath);
+					if (existingImg instanceof TFile) {
+						await this.app.vault.modifyBinary(existingImg, imageBuffer.buffer as ArrayBuffer);
+					} else {
+						await this.app.vault.createBinary(storyboardVaultPath, imageBuffer.buffer as ArrayBuffer);
+					}
+
+					notice.hide();
+					new Notice(`Spear: Storyboard ready — ${shots.length} shots tiled.`);
 				} catch (err) {
 					notice.hide();
-					new Notice(`Pompei error: ${err instanceof Error ? err.message : String(err)}`, 8000);
-					console.error("[Pompei]", err);
-					return;
+					new Notice(`Spear error: ${err instanceof Error ? err.message : String(err)}`, 8000);
+					console.error("[Spear]", err);
+				} finally {
+					// 5. Always clean up temp files.
+					await rm(tempDir, { recursive: true, force: true });
 				}
-
-				notice.hide();
-
-				// Append image embeds below the table.
-				const embeds = buildImageEmbeds(images, outputFolderPath);
-				editor.setValue(content + "\n\n## Storyboard\n\n" + embeds);
-
-				new Notice(`Pompei: ${images.length} storyboard image(s) generated.`);
 			},
 		});
 	}
@@ -112,14 +155,6 @@ export default class PompeiPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	private async ensureFolder(path: string) {
-		const exists = this.app.vault.getAbstractFileByPath(path);
-		if (!exists) {
-			await this.app.vault.createFolder(path);
-		} else if (!(exists instanceof TFolder)) {
-			throw new Error(`Pompei: "${path}" already exists and is not a folder.`);
-		}
-	}
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -140,24 +175,16 @@ function esc(value: string): string {
 	return value.replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
-/**
- * Naive parser: pulls shots back out of the markdown table so the storyboard
- * command can work directly from the note content.
- */
 function parseShotsFromTable(content: string): Shot[] {
-	const tableStart = content.indexOf("## Shot Breakdown");
-	if (tableStart === -1) return [];
-
-	const lines = content.slice(tableStart).split("\n");
+	const lines = content.split("\n");
 	const shots: Shot[] = [];
 
 	for (const line of lines) {
 		if (!line.startsWith("|")) continue;
 		const cells = line.split("|").map((c) => c.trim());
-		// cells[0] is empty, cells[1..6] are the columns, cells[7] is empty
 		if (cells.length < 7) continue;
 		const num = parseInt(cells[1]);
-		if (isNaN(num)) continue; // skip header / separator rows
+		if (isNaN(num)) continue;
 
 		shots.push({
 			number: num,
@@ -170,14 +197,4 @@ function parseShotsFromTable(content: string): Shot[] {
 	}
 
 	return shots;
-}
-
-function buildImageEmbeds(images: GeneratedImage[], folderPath: string): string {
-	return images
-		.map((img) => {
-			const filename = img.filePath.split("/").pop() ?? img.filePath;
-			const vaultPath = `${folderPath}/${filename}`;
-			return `### Shot ${img.shot.number} — ${img.shot.scene}\n![[${vaultPath}]]`;
-		})
-		.join("\n\n");
 }

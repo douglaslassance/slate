@@ -1,37 +1,38 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
-import type PompeiPlugin from "./main";
+import type SpearPlugin from "./main";
 
-export interface PompeiSettings {
+export interface SpearSettings {
 	// Ollama settings
 	ollamaHost: string;
 	ollamaModel: string;
 
 	// mflux settings
+	mfluxExecutable: string;
+	mfluxPromptHeader: string;
 	mfluxModel: string;
 	mfluxSteps: number;
 	mfluxWidth: number;
 	mfluxHeight: number;
 	mfluxQuantize: number | null;
 
-	// Output settings
-	outputFolder: string;
 }
 
-export const DEFAULT_SETTINGS: PompeiSettings = {
+export const DEFAULT_SETTINGS: SpearSettings = {
 	ollamaHost: "http://localhost:11434",
-	ollamaModel: "llama3",
-	mfluxModel: "schnell",
-	mfluxSteps: 4,
+	ollamaModel: "mistral:latest",
+	mfluxExecutable: "",
+	mfluxPromptHeader: "",
+	mfluxModel: "flux2-klein-4b",
+	mfluxSteps: 8,
 	mfluxWidth: 1024,
 	mfluxHeight: 576,
 	mfluxQuantize: 8,
-	outputFolder: "Storyboards",
 };
 
-export class PompeiSettingTab extends PluginSettingTab {
-	plugin: PompeiPlugin;
+export class SpearSettingTab extends PluginSettingTab {
+	plugin: SpearPlugin;
 
-	constructor(app: App, plugin: PompeiPlugin) {
+	constructor(app: App, plugin: SpearPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -58,10 +59,10 @@ export class PompeiSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Model")
-			.setDesc("Ollama model to use for shot breakdown (e.g. llama3, mistral).")
+			.setDesc("Ollama model to use for shot breakdown (e.g. mistral:latest, codestral:latest).")
 			.addText((text) =>
 				text
-					.setPlaceholder("llama3")
+					.setPlaceholder("mistral:latest")
 					.setValue(this.plugin.settings.ollamaModel)
 					.onChange(async (value) => {
 						this.plugin.settings.ollamaModel = value.trim();
@@ -69,15 +70,46 @@ export class PompeiSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// ── mflux ───────────────────────────────────────────────────
-		containerEl.createEl("h2", { text: "mflux" });
+		// ── MFLUX ───────────────────────────────────────────────────
+		containerEl.createEl("h2", { text: "MFLUX" });
+
+		new Setting(containerEl)
+			.setName("Executable path")
+			.setDesc("Full path to mflux-generate-flux2 (e.g. /usr/local/bin/mflux-generate-flux2). Leave empty to auto-resolve via login shell.")
+			.addText((text) =>
+				text
+					.setPlaceholder("/usr/local/bin/mflux-generate-flux2")
+					.setValue(this.plugin.settings.mfluxExecutable)
+					.onChange(async (value) => {
+						this.plugin.settings.mfluxExecutable = value.trim();
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Storyboard prompt header")
+			.setDesc("Text prepended to every shot prompt (e.g. a style or aesthetic description).")
+			.addTextArea((text) =>
+				text
+					.setPlaceholder("Cinematic storyboard frame, black and white ink sketch…")
+					.setValue(this.plugin.settings.mfluxPromptHeader)
+					.onChange(async (value) => {
+						this.plugin.settings.mfluxPromptHeader = value;
+						await this.plugin.saveSettings();
+					})
+			);
 
 		new Setting(containerEl)
 			.setName("Model")
-			.setDesc('Flux model variant: "schnell" (fast) or "dev" (quality).')
+			.setDesc("Flux 2 model variant. 4b is faster, 9b is higher quality. Base variants support guidance scale.")
 			.addDropdown((drop) =>
 				drop
-					.addOptions({ schnell: "schnell", dev: "dev" })
+					.addOptions({
+						"flux2-klein-4b": "flux2-klein-4b (fast)",
+						"flux2-klein-9b": "flux2-klein-9b (quality)",
+						"flux2-klein-base-4b": "flux2-klein-base-4b (fast, guided)",
+						"flux2-klein-base-9b": "flux2-klein-base-9b (quality, guided)",
+					})
 					.setValue(this.plugin.settings.mfluxModel)
 					.onChange(async (value) => {
 						this.plugin.settings.mfluxModel = value;
@@ -100,7 +132,7 @@ export class PompeiSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Width")
+			.setName("Storyboard width")
 			.setDesc("Output image width in pixels.")
 			.addText((text) =>
 				text
@@ -116,7 +148,7 @@ export class PompeiSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Height")
+			.setName("Storyboard height")
 			.setDesc("Output image height in pixels.")
 			.addText((text) =>
 				text
@@ -144,20 +176,5 @@ export class PompeiSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// ── Output ──────────────────────────────────────────────────
-		containerEl.createEl("h2", { text: "Output" });
-
-		new Setting(containerEl)
-			.setName("Output folder")
-			.setDesc("Vault folder where storyboard images will be saved.")
-			.addText((text) =>
-				text
-					.setPlaceholder("Storyboards")
-					.setValue(this.plugin.settings.outputFolder)
-					.onChange(async (value) => {
-						this.plugin.settings.outputFolder = value.trim();
-						await this.plugin.saveSettings();
-					})
-			);
 	}
 }
