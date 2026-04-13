@@ -1,5 +1,5 @@
 {
-	"name": "pompei",
+	"name": "spear",
 	"version": "0.1.0",
 	"description": "Obsidian plugin to generate shot breakdowns and storyboard images from scripts.",
 	"main": "main.js",
