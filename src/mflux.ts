@@ -30,6 +30,10 @@ function buildCommand(executable: string, settings: SlateSettings, prompt: strin
 		args.push(["--quantize", String(settings.mfluxQuantize)]);
 	}
 
+	if (settings.mfluxStyleImagePath) {
+		args.push(["--image-path", settings.mfluxStyleImagePath]);
+	}
+
 	const argStr = args
 		.map(([flag, value]) => `${flag} ${shellEscape(value)}`)
 		.join(" ");
@@ -70,21 +74,24 @@ export async function generateStoryboardImages(
 	shots: Shot[],
 	outputDir: string,
 	settings: SlateSettings,
-	onProgress?: (message: string, index: number, total: number) => void
+	onProgress?: (message: string, index: number, total: number) => void,
+	onImageGenerated?: (image: GeneratedImage) => Promise<void>,
+	resolvedDescriptions?: string[]
 ): Promise<GeneratedImage[]> {
 	const results: GeneratedImage[] = [];
 	const executable = await resolveMfluxExecutable(settings.mfluxExecutable);
 
 	for (let i = 0; i < shots.length; i++) {
 		const shot = shots[i];
-		const filename = `shot_${String(shot.number).padStart(3, "0")}.png`;
+		const filename = `${settings.storyboardImageName.replace("#", String(shot.number))}.png`;
 		const filePath = `${outputDir}/${filename}`;
 
 		onProgress?.(`Generating image for shot ${shot.number}…`, i, shots.length);
 
+		const description = resolvedDescriptions?.[i] ?? `${shot.action} ${shot.description}`;
 		const prompt = settings.mfluxPromptHeader
-			? `${settings.mfluxPromptHeader.trim()} ${shot.visualDescription}`
-			: shot.visualDescription;
+			? `${settings.mfluxPromptHeader.trim()} ${description}`
+			: description;
 		const command = buildCommand(executable, settings, prompt, filePath);
 
 		try {
@@ -97,7 +104,9 @@ export async function generateStoryboardImages(
 			throw new Error(`mflux-generate-flux2 failed for shot ${shot.number}: ${msg}`);
 		}
 
-		results.push({ shot, filePath });
+		const generated = { shot, filePath };
+		await onImageGenerated?.(generated);
+		results.push(generated);
 	}
 
 	return results;

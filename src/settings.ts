@@ -2,31 +2,49 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import type SlatePlugin from "./main";
 
 export interface SlateSettings {
-	// Ollama settings
+	// ── Shot Breakdown ─────────────────────────────────────────────────────────
 	ollamaHost: string;
 	ollamaModel: string;
+	breakdownLanguage: string;
+	breakdownCustomInstructions: string;
 
-	// mflux settings
+	// ── Storyboard ─────────────────────────────────────────────────────────────
 	mfluxExecutable: string;
+	storyboardImageName: string;
+	mfluxStyleImagePath: string;
 	mfluxPromptHeader: string;
 	mfluxModel: string;
 	mfluxSteps: number;
 	mfluxWidth: number;
 	mfluxHeight: number;
 	mfluxQuantize: number | null;
-
+	storyboardOutputType: "note" | "image";
+	storyboardTileColumns: number;
+	storyboardTilePadding: number;
+	storyboardTileBackground: string;
+	storyboardDeleteIndividualImages: boolean;
 }
 
 export const DEFAULT_SETTINGS: SlateSettings = {
 	ollamaHost: "http://localhost:11434",
 	ollamaModel: "mistral:latest",
+	breakdownLanguage: "",
+	breakdownCustomInstructions: "",
+
 	mfluxExecutable: "",
+	storyboardImageName: "Shot #",
+	mfluxStyleImagePath: "",
 	mfluxPromptHeader: "",
 	mfluxModel: "flux2-klein-4b",
 	mfluxSteps: 8,
 	mfluxWidth: 1024,
 	mfluxHeight: 576,
 	mfluxQuantize: 8,
+	storyboardOutputType: "note",
+	storyboardTileColumns: 2,
+	storyboardTilePadding: 16,
+	storyboardTileBackground: "#000000",
+	storyboardDeleteIndividualImages: false,
 };
 
 export class SlateSettingTab extends PluginSettingTab {
@@ -41,11 +59,11 @@ export class SlateSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		// ── Ollama ──────────────────────────────────────────────────
-		containerEl.createEl("h2", { text: "Ollama" });
+		// ── Shot Breakdown ──────────────────────────────────────────────────────
+		containerEl.createEl("h2", { text: "Shot breakdown" });
 
 		new Setting(containerEl)
-			.setName("Host")
+			.setName("Ollama host")
 			.setDesc("URL of your local Ollama server.")
 			.addText((text) =>
 				text
@@ -58,8 +76,8 @@ export class SlateSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Model")
-			.setDesc("Ollama model to use for shot breakdown (e.g. mistral:latest, codestral:latest).")
+			.setName("Ollama model")
+			.setDesc("Model to use for shot breakdown (e.g. mistral:latest, codestral:latest).")
 			.addText((text) =>
 				text
 					.setPlaceholder("mistral:latest")
@@ -70,11 +88,60 @@ export class SlateSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// ── MFLUX ───────────────────────────────────────────────────
-		containerEl.createEl("h2", { text: "MFLUX" });
+		new Setting(containerEl)
+			.setName("Output language")
+			.setDesc("Translate the shot breakdown into this language. Leave on \"Source\" to keep the script's original language.")
+			.addDropdown((drop) =>
+				drop
+					.addOptions({
+						"": "Source",
+						"English": "English",
+						"French": "French",
+						"Spanish": "Spanish",
+						"German": "German",
+						"Italian": "Italian",
+						"Portuguese": "Portuguese",
+						"Japanese": "Japanese",
+						"Korean": "Korean",
+						"Chinese (Simplified)": "Chinese (Simplified)",
+						"Chinese (Traditional)": "Chinese (Traditional)",
+						"Arabic": "Arabic",
+						"Hindi": "Hindi",
+						"Russian": "Russian",
+						"Dutch": "Dutch",
+						"Polish": "Polish",
+						"Turkish": "Turkish",
+						"Swedish": "Swedish",
+						"Norwegian": "Norwegian",
+						"Danish": "Danish",
+					})
+					.setValue(this.plugin.settings.breakdownLanguage)
+					.onChange(async (value) => {
+						this.plugin.settings.breakdownLanguage = value;
+						await this.plugin.saveSettings();
+					})
+			);
 
 		new Setting(containerEl)
-			.setName("Executable path")
+			.setName("Custom instructions")
+			.setDesc("Additional instructions appended to the breakdown prompt (e.g. \"Focus on action sequences, skip dialogue-only scenes\").")
+			.addTextArea((text) => {
+				text
+					.setPlaceholder("Focus on action sequences, skip dialogue-only scenes…")
+					.setValue(this.plugin.settings.breakdownCustomInstructions)
+					.onChange(async (value) => {
+						this.plugin.settings.breakdownCustomInstructions = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.rows = 5;
+				return text;
+			});
+
+		// ── Storyboard ──────────────────────────────────────────────────────────
+		containerEl.createEl("h2", { text: "Storyboard" });
+
+		new Setting(containerEl)
+			.setName("MFLUX executable path")
 			.setDesc("Full path to mflux-generate-flux2 (e.g. /usr/local/bin/mflux-generate-flux2). Leave empty to auto-resolve via login shell.")
 			.addText((text) =>
 				text
@@ -87,21 +154,21 @@ export class SlateSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Storyboard prompt header")
-			.setDesc("Text prepended to every shot prompt (e.g. a style or aesthetic description).")
-			.addTextArea((text) =>
+			.setName("Image name")
+			.setDesc("Filename template for each generated shot image. Use # as a placeholder for the shot number (e.g. \"Shot #\" → \"Shot 1.png\").")
+			.addText((text) =>
 				text
-					.setPlaceholder("Cinematic storyboard frame, black and white ink sketch…")
-					.setValue(this.plugin.settings.mfluxPromptHeader)
+					.setPlaceholder("Shot #")
+					.setValue(this.plugin.settings.storyboardImageName)
 					.onChange(async (value) => {
-						this.plugin.settings.mfluxPromptHeader = value;
+						this.plugin.settings.storyboardImageName = value || "Shot #";
 						await this.plugin.saveSettings();
 					})
 			);
 
 		new Setting(containerEl)
 			.setName("Model")
-			.setDesc("Flux 2 model variant. 4b is faster, 9b is higher quality. Base variants support guidance scale.")
+			.setDesc("Flux 2 model variant. 4b is faster, 9b is higher quality.")
 			.addDropdown((drop) =>
 				drop
 					.addOptions({
@@ -132,7 +199,48 @@ export class SlateSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Storyboard width")
+			.setName("Quantization")
+			.setDesc("Model quantization bits (4 or 8) to reduce VRAM usage. Leave empty to disable.")
+			.addDropdown((drop) =>
+				drop
+					.addOptions({ "": "None", "4": "4-bit", "8": "8-bit" })
+					.setValue(this.plugin.settings.mfluxQuantize !== null ? String(this.plugin.settings.mfluxQuantize) : "")
+					.onChange(async (value) => {
+						this.plugin.settings.mfluxQuantize = value === "" ? null : parseInt(value);
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Style image path")
+			.setDesc("Absolute path to a reference image passed to mflux as a style guide (leave empty to disable).")
+			.addText((text) =>
+				text
+					.setPlaceholder("/path/to/style-reference.png")
+					.setValue(this.plugin.settings.mfluxStyleImagePath)
+					.onChange(async (value) => {
+						this.plugin.settings.mfluxStyleImagePath = value.trim();
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Prompt header")
+			.setDesc("Text prepended to every shot prompt (e.g. a style or aesthetic description).")
+			.addTextArea((text) => {
+				text
+					.setPlaceholder("Cinematic storyboard frame, black and white ink sketch…")
+					.setValue(this.plugin.settings.mfluxPromptHeader)
+					.onChange(async (value) => {
+						this.plugin.settings.mfluxPromptHeader = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.rows = 5;
+				return text;
+			});
+
+		new Setting(containerEl)
+			.setName("Image width")
 			.setDesc("Output image width in pixels.")
 			.addText((text) =>
 				text
@@ -148,7 +256,7 @@ export class SlateSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Storyboard height")
+			.setName("Image height")
 			.setDesc("Output image height in pixels.")
 			.addText((text) =>
 				text
@@ -163,18 +271,80 @@ export class SlateSettingTab extends PluginSettingTab {
 					})
 			);
 
+		const tileSettings: Setting[] = [];
+
 		new Setting(containerEl)
-			.setName("Quantization")
-			.setDesc("Model quantization bits (4 or 8) to reduce VRAM usage. Leave empty to disable.")
-			.addDropdown((drop) =>
+			.setName("Output type")
+			.setDesc("Generate a gallery note (using img-gallery) or a single tiled image combining all shots.")
+			.addDropdown((drop) => {
 				drop
-					.addOptions({ "": "None", "4": "4-bit", "8": "8-bit" })
-					.setValue(this.plugin.settings.mfluxQuantize !== null ? String(this.plugin.settings.mfluxQuantize) : "")
+					.addOptions({ note: "Note", image: "Tiled image" })
+					.setValue(this.plugin.settings.storyboardOutputType)
+					.onChange(async (value: "note" | "image") => {
+						this.plugin.settings.storyboardOutputType = value;
+						await this.plugin.saveSettings();
+						tileSettings.forEach((s) => s.settingEl.toggle(value === "image"));
+					});
+			});
+
+		const showTile = this.plugin.settings.storyboardOutputType === "image";
+
+		const colSetting = new Setting(containerEl)
+			.setName("Columns")
+			.setDesc("Number of columns in the tiled image.")
+			.addSlider((slider) =>
+				slider
+					.setLimits(1, 6, 1)
+					.setValue(this.plugin.settings.storyboardTileColumns)
+					.setDynamicTooltip()
 					.onChange(async (value) => {
-						this.plugin.settings.mfluxQuantize = value === "" ? null : parseInt(value);
+						this.plugin.settings.storyboardTileColumns = value;
 						await this.plugin.saveSettings();
 					})
 			);
+		colSetting.settingEl.toggle(showTile);
+		tileSettings.push(colSetting);
 
+		const padSetting = new Setting(containerEl)
+			.setName("Padding")
+			.setDesc("Gap in pixels between images and around the border.")
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, 128, 4)
+					.setValue(this.plugin.settings.storyboardTilePadding)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.storyboardTilePadding = value;
+						await this.plugin.saveSettings();
+					})
+			);
+		padSetting.settingEl.toggle(showTile);
+		tileSettings.push(padSetting);
+
+		const bgSetting = new Setting(containerEl)
+			.setName("Background color")
+			.setDesc("Background and padding color for the tiled image.");
+		const colorInput = bgSetting.controlEl.createEl("input", { type: "color" });
+		colorInput.value = this.plugin.settings.storyboardTileBackground;
+		colorInput.addEventListener("input", async () => {
+			this.plugin.settings.storyboardTileBackground = colorInput.value;
+			await this.plugin.saveSettings();
+		});
+		bgSetting.settingEl.toggle(showTile);
+		tileSettings.push(bgSetting);
+
+		const deleteSetting = new Setting(containerEl)
+			.setName("Delete individual images after tiling")
+			.setDesc("Remove the shot images folder once the tiled image has been generated.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.storyboardDeleteIndividualImages)
+					.onChange(async (value) => {
+						this.plugin.settings.storyboardDeleteIndividualImages = value;
+						await this.plugin.saveSettings();
+					})
+			);
+		deleteSetting.settingEl.toggle(showTile);
+		tileSettings.push(deleteSetting);
 	}
 }
