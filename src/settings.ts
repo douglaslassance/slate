@@ -39,7 +39,7 @@ export const DEFAULT_SETTINGS: SlateSettings = {
 	mfluxSteps: 8,
 	mfluxWidth: 1024,
 	mfluxHeight: 576,
-	mfluxQuantize: 8,
+	mfluxQuantize: 4,
 	storyboardOutputType: "note",
 	storyboardTileColumns: 2,
 	storyboardTilePadding: 16,
@@ -200,10 +200,10 @@ export class SlateSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Quantization")
-			.setDesc("Model quantization bits (4 or 8) to reduce VRAM usage. Leave empty to disable.")
+			.setDesc("Model quantization bits to reduce VRAM usage. 4 is a good default. None = full precision.")
 			.addDropdown((drop) =>
 				drop
-					.addOptions({ "": "None", "4": "4-bit", "8": "8-bit" })
+					.addOptions({ "": "None", "3": "3-bit", "4": "4-bit", "5": "5-bit", "6": "6-bit", "8": "8-bit" })
 					.setValue(this.plugin.settings.mfluxQuantize !== null ? String(this.plugin.settings.mfluxQuantize) : "")
 					.onChange(async (value) => {
 						this.plugin.settings.mfluxQuantize = value === "" ? null : parseInt(value);
@@ -213,7 +213,7 @@ export class SlateSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Style image path")
-			.setDesc("Absolute path to a reference image passed to mflux as a style guide (leave empty to disable).")
+			.setDesc("Absolute path to a reference image or a folder of images used as style input (up to 4 images from the folder). Leave empty to disable.")
 			.addText((text) =>
 				text
 					.setPlaceholder("/path/to/style-reference.png")

@@ -1,9 +1,16 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { stat, readdir } from "fs/promises";
+import { join, extname } from "path";
 import type { Shot } from "./ollama";
 import type { SlateSettings } from "./settings";
 
 const execFileAsync = promisify(execFile);
+
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".bmp"]);
+
+/** Maximum number of reference images the model can accept. */
+const MAX_STYLE_IMAGES = 4;
 
 export interface GeneratedImage {
 	shot: Shot;
@@ -12,10 +19,55 @@ export interface GeneratedImage {
 }
 
 /**
- * Build the mflux-generate-flux2 CLI argument string for a single shot.
- * Arguments are shell-escaped so paths/prompts with spaces are safe.
+ * Resolve style image paths from a file or folder.
+ * Returns an empty array if the path is empty or doesn't exist.
+ * Caps at MAX_STYLE_IMAGES.
  */
-function buildCommand(executable: string, settings: SlateSettings, prompt: string, outputPath: string): string {
+async function resolveStyleImages(stylePath: string): Promise<string[]> {
+	if (!stylePath) return [];
+
+	let info;
+	try {
+		info = await stat(stylePath);
+	} catch {
+		console.warn("[Slate] Style image path not found:", stylePath);
+		return [];
+	}
+
+	if (info.isFile()) {
+		return [stylePath];
+	}
+
+	if (info.isDirectory()) {
+		const entries = await readdir(stylePath);
+		const images = entries
+			.filter((f) => IMAGE_EXTENSIONS.has(extname(f).toLowerCase()))
+			.sort()
+			.slice(0, MAX_STYLE_IMAGES)
+			.map((f) => join(stylePath, f));
+		console.log(`[Slate] Found ${images.length} style image(s) in folder:`, images);
+		return images;
+	}
+
+	return [];
+}
+
+/**
+ * Build the mflux CLI argument string for a single shot.
+ * When style images are provided, uses mflux-generate-flux2-edit with --image-paths.
+ * Otherwise uses mflux-generate-flux2 for plain text-to-image generation.
+ */
+function buildCommand(
+	executable: string,
+	settings: SlateSettings,
+	prompt: string,
+	outputPath: string,
+	styleImages: string[]
+): string {
+	const hasStyleImages = styleImages.length > 0;
+	const activeExecutable = hasStyleImages
+		? executable.replace("mflux-generate-flux2", "mflux-generate-flux2-edit")
+		: executable;
 
 	const args: [string, string][] = [
 		["--model", settings.mfluxModel],
@@ -30,15 +82,16 @@ function buildCommand(executable: string, settings: SlateSettings, prompt: strin
 		args.push(["--quantize", String(settings.mfluxQuantize)]);
 	}
 
-	if (settings.mfluxStyleImagePath) {
-		args.push(["--image-path", settings.mfluxStyleImagePath]);
+	if (hasStyleImages) {
+		// --image-paths accepts multiple space-separated paths
+		args.push(["--image-paths", styleImages.map(shellEscape).join(" ")]);
 	}
 
 	const argStr = args
-		.map(([flag, value]) => `${flag} ${shellEscape(value)}`)
+		.map(([flag, value]) => `${flag} ${flag === "--image-paths" ? value : shellEscape(value)}`)
 		.join(" ");
 
-	return `${shellEscape(executable)} ${argStr}`;
+	return `${shellEscape(activeExecutable)} ${argStr}`;
 }
 
 function shellEscape(value: string): string {
@@ -47,7 +100,6 @@ function shellEscape(value: string): string {
 
 /**
  * Resolve the full path of mflux-generate-flux2 via a login shell.
- * Logs the resolved path and shell PATH for diagnostics.
  */
 async function resolveMfluxExecutable(override: string): Promise<string> {
 	if (override) return override;
@@ -60,6 +112,7 @@ async function resolveMfluxExecutable(override: string): Promise<string> {
 		const resolved = which.trim();
 		console.log("[Slate] Resolved mflux-generate-flux2:", resolved);
 		return resolved || "mflux-generate-flux2";
+		// mflux-generate-flux2-edit is resolved by replacing the binary name at command build time.
 	} catch (err) {
 		console.warn("[Slate] Could not resolve mflux-generate-flux2 via login shell:", err);
 		return "mflux-generate-flux2";
@@ -67,7 +120,7 @@ async function resolveMfluxExecutable(override: string): Promise<string> {
 }
 
 /**
- * Generate storyboard images for a list of shots using mflux-generate-flux2.
+ * Generate storyboard images for a list of shots using mflux.
  * Runs through a login shell so the full user PATH is available.
  */
 export async function generateStoryboardImages(
@@ -80,6 +133,11 @@ export async function generateStoryboardImages(
 ): Promise<GeneratedImage[]> {
 	const results: GeneratedImage[] = [];
 	const executable = await resolveMfluxExecutable(settings.mfluxExecutable);
+	const styleImages = await resolveStyleImages(settings.mfluxStyleImagePath);
+
+	if (styleImages.length > 0) {
+		console.log(`[Slate] Using ${styleImages.length} style image(s):`, styleImages);
+	}
 
 	for (let i = 0; i < shots.length; i++) {
 		const shot = shots[i];
@@ -92,16 +150,15 @@ export async function generateStoryboardImages(
 		const prompt = settings.mfluxPromptHeader
 			? `${settings.mfluxPromptHeader.trim()} ${description}`
 			: description;
-		const command = buildCommand(executable, settings, prompt, filePath);
+		const command = buildCommand(executable, settings, prompt, filePath, styleImages);
 
 		try {
-			// Run via zsh login shell so ~/.zshrc / ~/.zprofile PATH entries are available.
 			await execFileAsync("/bin/zsh", ["-l", "-c", command], {
 				timeout: 10 * 60 * 1000,
 			});
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
-			throw new Error(`mflux-generate-flux2 failed for shot ${shot.number}: ${msg}`);
+			throw new Error(`mflux failed for shot ${shot.number}: ${msg}`);
 		}
 
 		const generated = { shot, filePath };
