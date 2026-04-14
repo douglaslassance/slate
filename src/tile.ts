@@ -1,62 +1,60 @@
-import { readFile, writeFile } from "fs/promises";
+import { Jimp } from "jimp";
 
 /**
- * Tile a list of image file paths into a single contact-sheet PNG
- * using the browser Canvas API (available in Electron/Obsidian — no native deps).
+ * Parse a CSS-style hex color string ("#rrggbb" or "#rgb") into a 32-bit
+ * RGBA integer (0xRRGGBBAA) that Jimp accepts as a pixel value.
+ */
+function hexToRgba(hex: string): number {
+	const h = hex.replace("#", "");
+	let r: number, g: number, b: number;
+	if (h.length === 3) {
+		r = parseInt(h[0] + h[0], 16);
+		g = parseInt(h[1] + h[1], 16);
+		b = parseInt(h[2] + h[2], 16);
+	} else {
+		r = parseInt(h.slice(0, 2), 16);
+		g = parseInt(h.slice(2, 4), 16);
+		b = parseInt(h.slice(4, 6), 16);
+	}
+	return ((r << 24) | (g << 16) | (b << 8) | 0xff) >>> 0;
+}
+
+/**
+ * Composite a list of image files into a single tiled PNG.
  *
- * Images are laid out left-to-right, top-to-bottom in a roughly square grid.
- *
- * @param imagePaths  Ordered list of absolute image paths.
- * @param outputPath  Absolute path for the output PNG.
- * @param cellWidth   Width of each cell (should match mflux --width).
- * @param cellHeight  Height of each cell (should match mflux --height).
+ * @param imagePaths   Ordered list of absolute file paths to the shot images.
+ * @param outputPath   Absolute path where the tiled PNG will be saved.
+ * @param columns      Number of columns in the grid (default 2).
+ * @param padding      Gap in pixels between images and around the border.
+ * @param background   Background / padding colour as a CSS hex string ("#000000").
  */
 export async function tileImages(
 	imagePaths: string[],
 	outputPath: string,
-	cellWidth: number,
-	cellHeight: number
+	columns: number = 2,
+	padding: number = 16,
+	background: string = "#000000"
 ): Promise<void> {
-	const count = imagePaths.length;
-	if (count === 0) throw new Error("No images to tile.");
+	if (imagePaths.length === 0) return;
 
-	const cols = Math.ceil(Math.sqrt(count));
-	const rows = Math.ceil(count / cols);
+	const frames = await Promise.all(imagePaths.map((p) => Jimp.read(p)));
 
-	const canvas = document.createElement("canvas");
-	canvas.width = cols * cellWidth;
-	canvas.height = rows * cellHeight;
+	const cellW = Math.max(...frames.map((f) => f.width));
+	const cellH = Math.max(...frames.map((f) => f.height));
+	const rows  = Math.ceil(imagePaths.length / columns);
 
-	const ctx = canvas.getContext("2d");
-	if (!ctx) throw new Error("Could not get 2D canvas context.");
+	const totalW = padding + columns * (cellW + padding);
+	const totalH = padding + rows    * (cellH + padding);
 
-	ctx.fillStyle = "#000000";
-	ctx.fillRect(0, 0, canvas.width, canvas.height);
+	const bg = new Jimp({ width: totalW, height: totalH, color: hexToRgba(background) });
 
-	for (let i = 0; i < imagePaths.length; i++) {
-		const imgData = await readFile(imagePaths[i]);
-		const blob = new Blob([imgData], { type: "image/png" });
-		const url = URL.createObjectURL(blob);
-
-		await new Promise<void>((resolve, reject) => {
-			const img = new Image();
-			img.onload = () => {
-				const col = i % cols;
-				const row = Math.floor(i / cols);
-				ctx.drawImage(img, col * cellWidth, row * cellHeight, cellWidth, cellHeight);
-				URL.revokeObjectURL(url);
-				resolve();
-			};
-			img.onerror = () => {
-				URL.revokeObjectURL(url);
-				reject(new Error(`Failed to load image: ${imagePaths[i]}`));
-			};
-			img.src = url;
-		});
+	for (let i = 0; i < frames.length; i++) {
+		const col = i % columns;
+		const row = Math.floor(i / columns);
+		const x   = padding + col * (cellW + padding);
+		const y   = padding + row * (cellH + padding);
+		bg.composite(frames[i], x, y);
 	}
 
-	// Export to PNG and write to disk.
-	const dataUrl = canvas.toDataURL("image/png");
-	const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
-	await writeFile(outputPath, Buffer.from(base64, "base64"));
+	await bg.write(outputPath as `${string}.${string}`);
 }

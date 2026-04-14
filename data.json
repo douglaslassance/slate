@@ -1,12 +1,21 @@
 {
   "ollamaHost": "http://localhost:11434",
-  "ollamaModel": "mistral:latest",
+  "ollamaModel": "codestral:latest",
+  "breakdownLanguage": "English",
+  "breakdownCustomInstructions": "",
   "mfluxExecutable": "",
+  "storyboardImageName": "Shot #",
+  "mfluxStyleImagePath": "",
   "mfluxPromptHeader": "Black and white pencil sketches, dynamic anime style.",
-  "mfluxModel": "flux2-klein-4b",
+  "mfluxModel": "flux2-klein-9b",
   "mfluxSteps": 8,
   "mfluxWidth": 320,
   "mfluxHeight": 180,
   "mfluxQuantize": 8,
+  "storyboardOutputType": "image",
+  "storyboardTileColumns": 2,
+  "storyboardTilePadding": 16,
+  "storyboardTileBackground": "#ffffff",
+  "storyboardDeleteIndividualImages": true,
   "outputFolder": "Storyboards"
 }
