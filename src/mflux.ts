@@ -58,28 +58,21 @@ async function resolveStyleImages(stylePath: string, vaultBasePath: string): Pro
 }
 
 /**
- * Parse LoRA paths and scales from the settings strings.
- * Paths are one per line; scales are one per line in matching order.
- * Any path without a corresponding scale defaults to 1.0.
- * Relative paths are resolved against the vault root.
+ * Resolve LoRA paths against the vault root and return parallel paths/scales arrays
+ * ready to pass to the mflux CLI.
  */
 function resolveLoraArgs(settings: SlateSettings, vaultBasePath: string): { paths: string[]; scales: number[] } {
-	const paths = settings.mfluxLoraPaths
-		.split("\n")
-		.map((l) => l.trim())
-		.filter(Boolean)
-		.map((p) => (p.startsWith("/") ? p : join(vaultBasePath, p)));
-
-	const scales = settings.mfluxLoraScales
-		.split("\n")
-		.map((l) => l.trim())
-		.filter(Boolean)
-		.map((s) => parseFloat(s));
-
-	// Fill missing scales with 1.0.
-	const paddedScales = paths.map((_, i) => (Number.isFinite(scales[i]) ? scales[i] : 1.0));
-
-	return { paths, scales: paddedScales };
+	const entries = settings.mfluxLoras.filter((l) => l.path.trim());
+	const paths = entries.map((l) => {
+		// Absolute path: pass through as-is.
+		if (l.path.startsWith("/")) return l.path;
+		// Hugging Face repo ID (e.g. "username/my-lora"): pass through as-is.
+		if (/^[^/]+\/[^/]+$/.test(l.path) && !l.path.includes(".")) return l.path;
+		// Relative local path: resolve against vault root.
+		return join(vaultBasePath, l.path);
+	});
+	const scales = entries.map((l) => l.scale);
+	return { paths, scales };
 }
 
 /**

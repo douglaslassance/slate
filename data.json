@@ -14,6 +14,7 @@
   "mfluxWidth": 320,
   "mfluxHeight": 180,
   "mfluxQuantize": 8,
+  "mfluxLoras": [],
   "storyboardOutputType": "image",
   "storyboardTileOrientation": "portrait",
   "storyboardTilePadding": 16,
