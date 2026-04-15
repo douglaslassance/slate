@@ -2,7 +2,7 @@
   "ollamaHost": "http://localhost:11434",
   "ollamaModel": "codestral:latest",
   "breakdownLanguage": "English",
-  "breakdownCustomInstructions": "",
+  "breakdownCustomInstructions": "Action style editing, shot density should be as high as it can be, with alternating action framing.",
   "breakdownOutputFolder": "",
   "mfluxExecutable": "",
   "storyboardImageName": "Shot #",
@@ -17,6 +17,7 @@
   "storyboardTileOrientation": "portrait",
   "storyboardTilePadding": 16,
   "storyboardTileBackground": "#ffffff",
+  "breakdownShotsPerPage": 5,
   "storyboardTileColumns": 2,
   "storyboardDeleteIndividualImages": false,
   "outputFolder": "Storyboards"

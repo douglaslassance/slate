@@ -8,6 +8,7 @@ export interface SlateSettings {
 	breakdownLanguage: string;
 	breakdownCustomInstructions: string;
 	breakdownOutputFolder: string;
+	breakdownChunkSize: number;
 
 	// ── Storyboard ─────────────────────────────────────────────────────────────
 	mfluxExecutable: string;
@@ -27,10 +28,11 @@ export interface SlateSettings {
 
 export const DEFAULT_SETTINGS: SlateSettings = {
 	ollamaHost: "http://localhost:11434",
-	ollamaModel: "mistral:latest",
+	ollamaModel: "codestral:latest",
 	breakdownLanguage: "",
 	breakdownCustomInstructions: "",
 	breakdownOutputFolder: "",
+	breakdownChunkSize: 750,
 
 	mfluxExecutable: "",
 	storyboardImageName: "Shot #",
@@ -77,13 +79,13 @@ export class SlateSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Ollama model")
-			.setDesc("Model to use for shot breakdown (e.g. mistral:latest, codestral:latest).")
-			.addText((text) =>
-				text
-					.setPlaceholder("mistral:latest")
+			.setDesc("Model to use for shot breakdown. If the model is not installed it will be pulled automatically when you run a command.")
+			.addDropdown((drop) =>
+				drop
+					.addOptions({ "codestral:latest": "codestral:latest" })
 					.setValue(this.plugin.settings.ollamaModel)
 					.onChange(async (value) => {
-						this.plugin.settings.ollamaModel = value.trim();
+						this.plugin.settings.ollamaModel = value;
 						await this.plugin.saveSettings();
 					})
 			);
@@ -136,6 +138,22 @@ export class SlateSettingTab extends PluginSettingTab {
 				text.inputEl.rows = 5;
 				return text;
 			});
+
+		new Setting(containerEl)
+			.setName("Chunk size")
+			.setDesc("Maximum words per request sent to Ollama. The script is split at scene boundaries so no scene is ever cut in half. Lower values mean more focused calls; higher values mean fewer calls. Larger chunks give the model more to process at once, which tends to produce fewer shots per scene.")
+			.addText((text) =>
+				text
+					.setPlaceholder("750")
+					.setValue(String(this.plugin.settings.breakdownChunkSize))
+					.onChange(async (value) => {
+						const n = parseInt(value);
+						if (!isNaN(n) && n > 0) {
+							this.plugin.settings.breakdownChunkSize = n;
+							await this.plugin.saveSettings();
+						}
+					})
+			);
 
 		new Setting(containerEl)
 			.setName("Output folder")

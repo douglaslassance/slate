@@ -4,9 +4,11 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { App, Notice, Plugin, TFile, normalizePath } from "obsidian";
 import { DEFAULT_SETTINGS, SlateSettings, SlateSettingTab } from "./settings";
-import { generateShotBreakdown, summarizeLinks, convertToFountain, Shot } from "./ollama";
+import { generateShotBreakdown, summarizeLinks, convertToFountain, splitScriptIntoChunks, Shot } from "./ollama";
 import { generateStoryboardImages } from "./mflux";
 import { collectLinkContents } from "./vault";
+
+const log = (...args: unknown[]) => console.log("[Slate]", ...args);
 
 export default class SlatePlugin extends Plugin {
 	settings: SlateSettings;
@@ -34,16 +36,31 @@ export default class SlatePlugin extends Plugin {
 
 				const notice = new Notice("Slate: Generating shot breakdown…", 0);
 
-				let shots: Shot[];
+				const chunks = splitScriptIntoChunks(scriptText, this.settings.breakdownChunkSize);
+				const wordCount = scriptText.trim().split(/\s+/).length;
+				log(`${wordCount} words → ${chunks.length} chunk(s) → ${chunks.length} Ollama request(s).`);
+
+				let shots: Shot[] = [];
 				try {
-					shots = await generateShotBreakdown(
-						this.settings.ollamaHost,
-						this.settings.ollamaModel,
-						scriptText,
-						this.settings.breakdownLanguage,
-						this.settings.breakdownCustomInstructions,
-						(msg) => notice.setMessage(`Slate: ${msg}`)
-					);
+					for (let c = 0; c < chunks.length; c++) {
+						const chunk = chunks[c];
+						const chunkWords = chunk.trim().split(/\s+/).length;
+						const chunkLabel = chunks.length > 1 ? ` (part ${c + 1}/${chunks.length})` : "";
+						log(`Chunk ${c + 1}/${chunks.length}: ${chunkWords} words — sending to Ollama (${this.settings.ollamaModel})…`);
+						const chunkShots = await generateShotBreakdown(
+							this.settings.ollamaHost,
+							this.settings.ollamaModel,
+							chunk,
+							this.settings.breakdownLanguage,
+							this.settings.breakdownCustomInstructions,
+							(msg) => notice.setMessage(`Slate: ${msg}${chunkLabel}`)
+						);
+						log(`Chunk ${c + 1}/${chunks.length}: ${chunkShots.length} shots returned.`);
+						shots.push(...chunkShots);
+					}
+					// Renumber shots sequentially across all chunks.
+					shots = shots.map((s, i) => ({ ...s, number: i + 1 }));
+					log(`Breakdown complete: ${shots.length} total shots.`);
 				} catch (err) {
 					notice.hide();
 					new Notice(`Slate error: ${err instanceof Error ? err.message : String(err)}`, 8000);
@@ -64,7 +81,7 @@ export default class SlatePlugin extends Plugin {
 				const table = buildMarkdownTable(shots);
 				const content = inlineTitle(this.app)
 					? table
-					: `# ${baseName} — Shot breakdown\n\n${table}`;
+					: `# ${baseName} - Shot breakdown\n\n${table}`;
 
 				const existing = this.app.vault.getAbstractFileByPath(breakdownVaultPath);
 				let breakdownFile: TFile;
@@ -76,7 +93,7 @@ export default class SlatePlugin extends Plugin {
 				}
 
 				await this.app.workspace.getLeaf(false).openFile(breakdownFile);
-				new Notice(`Slate: Shot breakdown complete — ${shots.length} shots.`);
+				new Notice(`Slate: Shot breakdown complete: ${shots.length} shots.`);
 			},
 		});
 
@@ -126,7 +143,7 @@ export default class SlatePlugin extends Plugin {
 					await this.app.vault.create(fountainPath, fountain);
 				}
 
-				new Notice(`Slate: Fountain file ready — ${fountainPath}`);
+				new Notice(`Slate: Fountain file ready: ${fountainPath}`);
 			},
 		});
 
@@ -178,7 +195,7 @@ export default class SlatePlugin extends Plugin {
 					const shotName = (this.settings.storyboardImageName || "Shot #").replace("#", String(shot.number));
 					const promptVaultPath = normalizePath(`${promptsVaultPath}/${shotName}.md`);
 
-					const promptContent = buildShotPrompt(shot, i, shots, linkSummaries, this.settings, shotName, rendersVaultPath, sceneVaultPath);
+					const promptContent = buildShotPrompt(shot, linkSummaries, this.settings, shotName, rendersVaultPath, sceneVaultPath);
 					const existing = this.app.vault.getAbstractFileByPath(promptVaultPath);
 					let promptFile: TFile;
 					if (existing instanceof TFile) {
@@ -193,7 +210,7 @@ export default class SlatePlugin extends Plugin {
 				if (firstFile) {
 					await this.app.workspace.getLeaf(false).openFile(firstFile);
 				}
-				new Notice(`Slate: Prompts ready — ${shots.length} shots.`);
+				new Notice(`Slate: Prompts ready: ${shots.length} shots.`);
 			},
 		});
 
@@ -243,48 +260,59 @@ export default class SlatePlugin extends Plugin {
 					// 1. Resolve wikilinks
 					notice.setMessage("Slate: Collecting links…");
 					const linkContents = await collectLinkContents(shots, this.app);
+					log(`Found ${linkContents.length} wikilink(s) to summarize.`);
 					notice.setMessage("Slate: Summarizing links…");
+					if (linkContents.length > 0) {
+						log(`Sending ${linkContents.length} link(s) to Ollama for summarization…`);
+					}
 					const linkSummaries = await summarizeLinks(
 						this.settings.ollamaHost,
 						this.settings.ollamaModel,
 						linkContents
 					);
+					log(`Link summarization done: ${Object.keys(linkSummaries).length} summary/summaries.`);
 
 					// 2. Build per-shot names and prompts
 					const shotNames = shots.map((s) =>
 						(this.settings.storyboardImageName || "Shot #").replace("#", String(s.number))
 					);
 
-					const resolvedDescriptions = shots.map((s, i) => {
-						const parts: string[] = [];
+					// Build natural-language prompts for FLUX's T5 encoder.
+					// Order: character appearances, subject+action, framing, dialog.
+					// FLUX weights earlier tokens more heavily, so subject comes first.
+					// Wikilinks are stripped - mflux has no knowledge of them.
+
+					const resolvedDescriptions = shots.map((s) => {
 						const shotText = `${s.action} ${s.description} ${s.dialog ?? ""}`;
 						const featured = Object.entries(linkSummaries).filter(([name]) =>
 							shotText.includes(`[[${name}]]`)
 						);
+
+						const sentences: string[] = [];
+
+						// 1. Character visual descriptions - who is in the frame.
 						if (featured.length > 0) {
-							parts.push(
-								`Featured in this shot:\n${featured.map(([name, summary]) => `${name}: ${summary}`).join("\n")}`
-							);
+							sentences.push(featured.map(([, summary]) => summary).join(" "));
 						}
-						parts.push(`Location: ${s.scene}`);
-						parts.push(`Camera: ${s.camera}`);
-						parts.push(`Action: ${s.action}`);
-						parts.push(`Description: ${s.description}`);
+
+						// 2. Action + visual description as natural prose (subject front-loaded).
+						sentences.push(`${stripLinks(s.action)} ${stripLinks(s.description)}`.trim());
+
+						// 3. Camera framing - after subject so FLUX weights subject first.
+						sentences.push(`Framing: ${normalizeDashes(stripLinks(s.camera))}.`);
+
+						// 4. Dialog display instruction.
 						if (s.dialog) {
-							parts.push(`Dialog — feature this text visually in the image: "${s.dialog}"`);
+							sentences.push(`Display this spoken line as legible on-screen text: "${stripLinks(s.dialog)}"`);
 						}
-						if (i > 0) {
-							const prev = shots[i - 1];
-							parts.push(`Previous shot: ${prev.action} ${prev.description}`);
-						}
-						parts.push(`Single cinematic frame. Not a comic strip or panel sequence. Each character must appear only once in the image — never duplicate the same person. Respect the camera instruction strictly: a Close-Up is a tight frame on the main subject filling most of the image, a Wide Shot shows the full environment with the subject small within it, a Medium Shot frames the subject from the waist up, and an Extreme Close-Up isolates a single detail.`);
-						return parts.join("\n\n");
+
+						return sentences.join(" ");
 					});
 
 					// 3. Always write prompt files into Prompts/
 					for (let i = 0; i < shots.length; i++) {
 						const promptVaultPath = normalizePath(`${promptsVaultPath}/${shotNames[i]}.md`);
-						const promptContent = buildShotPrompt(shots[i], i, shots, linkSummaries, this.settings, shotNames[i], rendersVaultPath, sceneVaultPath);
+						const promptContent = buildShotPrompt(shots[i], linkSummaries, this.settings, shotNames[i], rendersVaultPath, sceneVaultPath);
 						const existing = this.app.vault.getAbstractFileByPath(promptVaultPath);
 						if (existing instanceof TFile) {
 							await this.app.vault.modify(existing, promptContent);
@@ -299,7 +327,7 @@ export default class SlatePlugin extends Plugin {
 					if (!outputAsImage) {
 						const noteContent = inlineTitle(this.app)
 							? buildGalleryNote(rendersVaultPath)
-							: `# ${sceneName} — Storyboard\n\n${buildGalleryNote(rendersVaultPath)}`;
+							: `# ${sceneName} - Storyboard\n\n${buildGalleryNote(rendersVaultPath)}`;
 						const existingNote = this.app.vault.getAbstractFileByPath(storyboardNotePath);
 						let storyboardFile: TFile;
 						if (existingNote instanceof TFile) {
@@ -312,6 +340,7 @@ export default class SlatePlugin extends Plugin {
 					}
 
 					// 5. Generate images into temp dir, copy each to the Storyboard folder
+					log(`Starting image generation: ${shots.length} shot(s) via mflux (${this.settings.mfluxModel}).`);
 					const generatedImages = await generateStoryboardImages(
 						shots,
 						tempDir,
@@ -349,7 +378,7 @@ export default class SlatePlugin extends Plugin {
 					}
 
 					notice.hide();
-					new Notice(`Slate: Storyboard ready — ${shots.length} shots.`);
+					new Notice(`Slate: Storyboard ready: ${shots.length} shots.`);
 				} catch (err) {
 					notice.hide();
 					new Notice(`Slate error: ${err instanceof Error ? err.message : String(err)}`, 8000);
@@ -402,11 +431,13 @@ async function ensureVaultFolder(vaultPath: string, app: App): Promise<void> {
 	}
 }
 
+const STRIP_LINKS_RE = /\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g;
+const stripLinks = (text: string) => text.replace(STRIP_LINKS_RE, "$1");
+const normalizeDashes = (text: string) => text.replace(/\s*[—–]\s*/g, " - ");
+
 /** Build the markdown content for a single shot's prompt file. */
 function buildShotPrompt(
 	shot: Shot,
-	index: number,
-	allShots: Shot[],
 	linkSummaries: Record<string, string>,
 	settings: SlateSettings,
 	shotName: string,
@@ -421,28 +452,17 @@ function buildShotPrompt(
 	);
 
 	if (settings.mfluxPromptHeader) {
-		body.push(`### Art style\n${settings.mfluxPromptHeader.trim()}`);
+		body.push(settings.mfluxPromptHeader.trim());
+	}
+	body.push(stripLinks(shot.scene));
+	body.push(normalizeDashes(stripLinks(shot.camera)));
+	body.push(stripLinks(shot.action));
+	body.push(stripLinks(shot.description));
+	if (shot.dialog) {
+		body.push(stripLinks(shot.dialog));
 	}
 	if (featured.length > 0) {
-		body.push(
-			`### Featured in this shot\n${featured.map(([name, summary]) => `[[${name}]]: ${summary}`).join("\n\n")}`
-		);
-	}
-	body.push(`### Location\n${shot.scene}`);
-	body.push(`### Camera\n${shot.camera}`);
-	body.push(`### Action\n${shot.action}`);
-	body.push(`### Description\n${shot.description}`);
-	if (shot.dialog) {
-		body.push(`### Dialog\n${shot.dialog}`);
-	}
-	if (index > 0) {
-		const prev = allShots[index - 1];
-		body.push(`### Previous shot\n${prev.action}\n\n${prev.description}`);
-	}
-	if (shot.dialog) {
-		body.push(`### Instructions\nSingle cinematic frame. Not a comic strip or panel sequence. Each character must appear only once in the image — never duplicate the same person. Respect the camera instruction strictly: a Close-Up is a tight frame on the main subject filling most of the image, a Wide Shot shows the full environment with the subject small within it, a Medium Shot frames the subject from the waist up, and an Extreme Close-Up isolates a single detail. Respect the camera instruction strictly: a Close-Up is a tight frame on the main subject filling most of the image, a Wide Shot shows the full environment with the subject small within it, a Medium Shot frames the subject from the waist up, and an Extreme Close-Up isolates a single detail. The speaking character must be prominently featured. Display the dialog as visible text in the image — as a speech bubble, caption, or subtitle.`);
-	} else {
-		body.push(`### Instructions\nSingle cinematic frame. Not a comic strip or panel sequence. Each character must appear only once in the image — never duplicate the same person. Respect the camera instruction strictly: a Close-Up is a tight frame on the main subject filling most of the image, a Wide Shot shows the full environment with the subject small within it, a Medium Shot frames the subject from the waist up, and an Extreme Close-Up isolates a single detail.`);
+		body.push(featured.map(([name, summary]) => `${name}: ${summary}`).join("\n\n"));
 	}
 
 	const imageEmbed = `![[${storyboardFolderVaultPath}/${shotName}.png]]`;

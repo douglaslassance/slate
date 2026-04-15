@@ -3,73 +3,197 @@ export interface Shot {
 	number: number;
 	/** Scene or sequence label (e.g. "EXT. DESERT - DAY"). */
 	scene: string;
-	/** Shot type and camera movement combined (e.g. "CU — Dolly in"). */
+	/** Shot type and camera movement combined (e.g. "Close-Up - Static"). */
 	camera: string;
-	/** Narrative action — what is happening in the shot. Preserve any [[wikilinks]]. */
+	/** Narrative action: what is happening in the shot. Preserve any [[wikilinks]]. */
 	action: string;
-	/** Visual details worth noting — lighting, colors, props, atmosphere, composition. Preserve any [[wikilinks]]. */
+	/** Visual details worth noting: lighting, colors, props, atmosphere, composition. Preserve any [[wikilinks]]. */
 	description: string;
 	/** Dialogue or spoken lines that occur during this shot (optional). Preserve any [[wikilinks]]. */
 	dialog?: string;
 }
 
 const SYSTEM_PROMPT = `You are a professional script supervisor and storyboard artist working on a feature film.
-Your job is to break a screenplay excerpt into an exhaustive shot list — one JSON object per camera setup.
+Your job is to break a screenplay excerpt into an exhaustive shot list, one JSON object per camera setup.
 
-STEP 1 — ESTIMATE SHOT COUNT BEFORE YOU WRITE ANYTHING:
-- Count the approximate number of pages in the excerpt (1 page ≈ 1 minute of screen time).
-- Multiply by the appropriate shot rate for the content type:
-    - Quiet dialogue / drama: 10 shots per minute (per page).
-    - Suspense, tension, crowd, moderate action: 18 shots per minute.
-    - Fights, chases, stunts, intense action: 35+ shots per minute.
-    - Mixed scenes: blend the rates proportionally.
-- Use that estimate as a FLOOR — you must produce AT LEAST that many shots.
-  Producing fewer is an error. Producing more is always acceptable.
+STEP 1: COMMIT TO BEING EXHAUSTIVE.
+Do not summarize or skip moments. Every beat, reaction, and action in the excerpt deserves its own shot. When in doubt, add a shot rather than skip it. There is no upper limit.
 
-STEP 2 — UNDERSTAND THE ATOMIC UNITS OF A SHOT LIST:
-A director thinks in two atomic units: action phrases and dialogue exchanges.
-- Each sentence or clause of action in the screenplay describes one thing happening — that is one shot.
-  Example: "John crosses the room" is one shot. "He picks up the phone" is another shot. Never merge them.
-- Each dialogue exchange often deserves its own shot: the speaker gets a shot, and the listening character's
-  reaction gets a separate shot. A line of dialogue is not a reason to skip a shot — it is a reason to add one.
+STEP 2: THE ONE RULE THAT OVERRIDES EVERYTHING ELSE.
+ONE action = ONE shot. This is non-negotiable.
+If a character does two things, that is two shots. If three things, three shots. Never combine them.
+  BAD (forbidden): "Keni runs across the room and grabs the phone." This is TWO shots, not one.
+  GOOD: Shot A: "Keni sprints across the room." / Shot B: "Keni grabs the phone."
+A shot describes exactly ONE moment frozen in time. The moment the subject does a second thing, you must start a new shot object.
 
 SPLIT AGGRESSIVELY. Every single one of the following is its own shot:
 - The scene-establishing wide shot at the top of every new location.
 - Every character entrance or exit.
-- Every sentence of action in the screenplay (if the script has 8 action lines in a scene, expect at least 8 shots from those lines alone).
-- Every line of dialogue — the speaker gets their own shot; the listener's reaction gets its own shot.
-- Every reaction — a glance, a flinch, a smile, a raised eyebrow — its own shot.
+- Every sentence or clause of action in the screenplay, each one is its own shot, no exceptions.
+- Every line of dialogue: the speaker gets their own shot; the listener's reaction gets its own separate shot.
+- Every reaction (a glance, a flinch, a smile, a raised eyebrow) is its own shot.
 - Every cutaway or insert (a door handle, a clock, a weapon, a document, an object of importance).
 - Every change of angle, focal length, or subject within a continuous moment.
 - Any moment where the camera would naturally cut in a professionally edited film.
 Do NOT merge two or more of these into one shot object. If in doubt, split.
 
-STEP 3 — WRITE RICH DESCRIPTIONS for each shot:
+STEP 3: WRITE RICH DESCRIPTIONS for each shot.
 - "action": one clear sentence describing exactly what is happening narratively in THIS shot only.
-- "description": paint the frame — specific lighting quality and direction, color palette, depth of field, textures, wardrobe details, props in frame, background activity, spatial relationships between subjects. Be concrete and visual. Do NOT restate the action or camera info here.
+- "description": paint the frame. Include specific lighting quality and direction, color palette, depth of field, textures, wardrobe details, props in frame, background activity, spatial relationships between subjects. Be concrete and visual. Do NOT restate the action or camera info here.
 - Every description should give an image-generation model enough to recreate the frame without seeing the script.
 
 Rules for the camera field:
-- Always write shot sizes and movements in full words — never use acronyms or abbreviations.
+- Always write shot sizes and movements in full words, never use acronyms or abbreviations.
 - Shot sizes: Extreme Wide Shot, Wide Shot, Medium Wide Shot, Medium Shot, Medium Close-Up, Close-Up, Extreme Close-Up, Insert.
 - Movements: Static, Pan Left, Pan Right, Tilt Up, Tilt Down, Dolly In, Dolly Out, Dolly Left, Dolly Right, Tracking, Handheld, Crane Up, Crane Down, Aerial.
-- Format: "{Shot Size} — {Movement}", e.g. "Close-Up — Static", "Wide Shot — Dolly In", "Medium Shot — Tracking".
+- Format: "{Shot Size} - {Movement}", e.g. "Close-Up - Static", "Wide Shot - Dolly In", "Medium Shot - Tracking".
 - Vary shot sizes constantly. Never use the same shot size more than twice in a row.
 
-IMPORTANT — wikilinks: the source text may contain Obsidian wikilinks in the form [[Name]].
+IMPORTANT: the source text may contain Obsidian wikilinks in the form [[Name]].
 You MUST copy these exactly as-is wherever the referenced entity appears.
 Do NOT paraphrase, expand, or remove them. Write [[Keni]], never just Keni.
 
 Each object must have exactly these keys:
   number      (integer, sequential across the whole script, starting from 1)
-  scene       (string, scene heading — preserve any [[wikilinks]])
+  scene       (string, scene heading, preserve any [[wikilinks]])
   camera      (string, shot type and camera movement in full words as described above)
-  action      (string, one sentence — what is happening in this specific shot — preserve any [[wikilinks]])
-  description (string, rich visual frame description — lighting, color, texture, wardrobe, props, depth, atmosphere — do NOT repeat camera or action — preserve any [[wikilinks]])
-  dialog      (string, speaker name followed by a colon and their spoken lines, e.g. "[[Keni]]: Hey, can you get me a Coke?" — include whenever anyone speaks, even one word — omit only when the shot is completely silent — preserve any [[wikilinks]])
+  action      (string, one sentence describing what is happening in this specific shot, preserve any [[wikilinks]])
+  description (string, rich visual frame description covering lighting, color, texture, wardrobe, props, depth, atmosphere, do NOT repeat camera or action, preserve any [[wikilinks]])
+  dialog      (string, speaker name followed by a colon and their spoken lines, e.g. "[[Keni]]: Hey, can you get me a Coke?", include whenever anyone speaks even a single word, omit only when the shot is completely silent, preserve any [[wikilinks]])
 
 REMINDER: every character name, location, or object that appeared as a [[wikilink]] in the source must remain a [[wikilink]] in your output.
 Return ONLY the raw JSON array. No markdown fences, no commentary, no preamble.`;
+
+export const SUGGESTED_MODELS = [
+	"mistral:latest",
+	"codestral:latest",
+	"llama3.1:latest",
+	"llama3.2:latest",
+	"qwen2.5:latest",
+	"gemma2:latest",
+	"phi4:latest",
+];
+
+/**
+ * Ensure a model is available locally, pulling it from the registry if not.
+ * Reports download progress via onProgress.
+ */
+export async function ensureModel(
+	host: string,
+	model: string,
+	onProgress?: (message: string) => void
+): Promise<void> {
+	const base = host.replace(/\/$/, "");
+
+	// Check installed models.
+	let installed = false;
+	try {
+		const res = await fetch(`${base}/api/tags`);
+		if (res.ok) {
+			const data = await res.json();
+			installed = (data.models ?? []).some(
+				(m: { name: string }) => m.name === model
+			);
+		}
+	} catch {
+		// If we can't reach the tags endpoint, proceed and let the chat call fail with a clear error.
+		return;
+	}
+
+	if (installed) return;
+
+	// Pull the model with streaming progress.
+	onProgress?.(`Pulling ${model} — this may take a few minutes…`);
+
+	let pullRes: Response;
+	try {
+		pullRes = await fetch(`${base}/api/pull`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ model, stream: true }),
+		});
+	} catch (err) {
+		throw new Error(`Cannot reach Ollama at ${host}. Is it running?\n${err}`);
+	}
+
+	if (!pullRes.ok) {
+		throw new Error(`Ollama pull failed (${pullRes.status}): ${await pullRes.text()}`);
+	}
+
+	const reader = pullRes.body?.getReader();
+	const decoder = new TextDecoder();
+
+	if (!reader) return;
+
+	let buffer = "";
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		buffer += decoder.decode(value, { stream: true });
+		const lines = buffer.split("\n");
+		buffer = lines.pop() ?? "";
+		for (const line of lines) {
+			if (!line.trim()) continue;
+			try {
+				const data = JSON.parse(line);
+				if (data.total && data.completed) {
+					const pct = Math.round((data.completed / data.total) * 100);
+					const done = (data.completed / 1e9).toFixed(1);
+					const total = (data.total / 1e9).toFixed(1);
+					onProgress?.(`Pulling ${model}: ${done} GB / ${total} GB (${pct}%)`);
+				} else if (data.status) {
+					onProgress?.(`Pulling ${model}: ${data.status}`);
+				}
+			} catch {}
+		}
+	}
+}
+
+/**
+ * Estimate the number of screenplay pages in a block of text.
+ * Standard screenplay: ~250 words per page.
+ */
+export function estimatePageCount(text: string): number {
+	const words = text.trim().split(/\s+/).length;
+	return Math.max(0.5, words / 250);
+}
+
+// Scene headings in Fountain format (INT./EXT.) and markdown heading format (## INT. / ## EXT.).
+const SCENE_HEADING_RE = /^(#{1,3}\s*)?\**(INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s/i;
+
+// Maximum shots we trust the model to produce cleanly in a single call.
+const SAFE_MAX_SHOTS_PER_CALL = 35;
+
+/**
+ * Split a script into chunks at scene boundaries so each chunk targets
+ * at most SAFE_MAX_SHOTS_PER_CALL shots.
+ */
+export function splitScriptIntoChunks(text: string, maxWordsPerChunk = 750): string[] {
+	const lines = text.split("\n");
+	const chunks: string[] = [];
+	let current: string[] = [];
+	let words = 0;
+
+	for (const line of lines) {
+		const isHeading = SCENE_HEADING_RE.test(line.trim());
+		const lineWords = line.trim() ? line.trim().split(/\s+/).length : 0;
+
+		if (isHeading && words >= maxWordsPerChunk && current.length > 0) {
+			chunks.push(current.join("\n").trim());
+			current = [];
+			words = 0;
+		}
+
+		current.push(line);
+		words += lineWords;
+	}
+
+	if (current.join("").trim()) {
+		chunks.push(current.join("\n").trim());
+	}
+
+	return chunks;
+}
 
 export async function generateShotBreakdown(
 	host: string,
@@ -79,18 +203,19 @@ export async function generateShotBreakdown(
 	customInstructions?: string,
 	onProgress?: (message: string) => void
 ): Promise<Shot[]> {
+	await ensureModel(host, model, onProgress);
 	onProgress?.("Connecting to Ollama…");
 
 	const url = `${host.replace(/\/$/, "")}/api/chat`;
 
 	let systemPrompt = SYSTEM_PROMPT;
 	if (language?.trim()) {
-		systemPrompt += `\n\nOUTPUT LANGUAGE — MANDATORY: Every string value in every JSON field MUST be written in ${language.trim()}. Translate each field individually, without exception:
+		systemPrompt += `\n\nOUTPUT LANGUAGE (MANDATORY): Every string value in every JSON field MUST be written in ${language.trim()}. Translate each field individually, without exception:
 - "scene": translate the full heading including the INT./EXT. prefix and the time of day suffix.
 - "camera": translate shot size names and movement names (e.g. "Close-Up", "Wide Shot", "Static", "Tracking").
 - "action": translate fully.
 - "description": translate fully.
-- "dialog": translate the spoken lines into ${language.trim()}. The earlier instruction to keep "exact lines" means exact in the TARGET language — do NOT keep the source-language wording. The speaker prefix (e.g. "[[Keni]]:") stays as-is; only the spoken text is translated.
+- "dialog": translate the spoken lines into ${language.trim()}. The earlier instruction to keep "exact lines" means exact in the TARGET language, do NOT keep the source-language wording. The speaker prefix (e.g. "[[Keni]]:") stays as-is; only the spoken text is translated.
 JSON keys ("number", "scene", "camera", "action", "description", "dialog") stay in English. Every string VALUE must be in ${language.trim()}. Leaving any field in the original source language is an error.`;
 	}
 	if (customInstructions?.trim()) {
@@ -140,15 +265,32 @@ JSON keys ("number", "scene", "camera", "action", "description", "dialog") stay 
 	// Also strip any "notes", "shotType", "cameraMovement", "visualDescription" lines the model
 	// may emit from old habits — only our current schema fields are wanted.
 	const unwantedKeys = /^[\s]*"(notes|shotType|cameraMovement|visualDescription)"\s*:/;
-	const cleaned = content
+	// Strip single-line JS comments the model sometimes adds (e.g. // Continue generating…)
+	const commentLine = /^\s*\/\/.*/;
+	let cleaned = content
 		.replace(/^```(?:json)?\s*/i, "")
 		.replace(/\s*```\s*$/, "")
 		.replace(/[\u201C\u201D]/g, "'")
 		.replace(/[\u2018\u2019]/g, "'")
 		.split("\n")
-		.filter((line) => !unwantedKeys.test(line))
+		.filter((line) => !unwantedKeys.test(line) && !commentLine.test(line))
 		.join("\n")
 		.trim();
+
+	// Recover from malformed arrays: missing opening bracket, missing closing bracket, or both.
+	if (!cleaned.startsWith("[")) {
+		cleaned = "[\n" + cleaned;
+		console.warn("[Slate] Response missing opening bracket — prepending [");
+	}
+	if (!cleaned.endsWith("]")) {
+		const lastBrace = cleaned.lastIndexOf("}");
+		if (lastBrace !== -1) {
+			cleaned = cleaned.slice(0, lastBrace + 1) + "\n]";
+		} else {
+			cleaned = cleaned + "\n]";
+		}
+		console.warn("[Slate] Response was truncated — closing JSON array and recovering partial results.");
+	}
 
 	let shots: Shot[];
 	try {
@@ -177,8 +319,8 @@ Convert the provided text into valid Fountain screenplay format, following these
 - Transitions: UPPERCASE followed by a colon, right-aligned (e.g. CUT TO:, FADE OUT.)
 - Scene numbers: do not add scene numbers unless they are already present in the source
 - Character names: always UPPERCASE when used as a dialogue cue
-- Wikilinks: strip all [[ and ]] markers — keep the name inside but remove the brackets entirely (e.g. [[Keni]] becomes Keni)
-- Non-standard elements: remove anything that does not belong in a proper screenplay — markdown formatting, headers, bullet points, notes, comments, meta-data, stage directions written as prose asides, emoji, and any other non-Fountain content
+- Wikilinks: strip all [[ and ]] markers, keep the name inside but remove the brackets entirely (e.g. [[Keni]] becomes Keni)
+- Non-standard elements: remove anything that does not belong in a proper screenplay, including markdown formatting, headers, bullet points, notes, comments, meta-data, stage directions written as prose asides, emoji, and any other non-Fountain content
 
 Return ONLY the Fountain-formatted text. No explanations, no markdown fences, no commentary.`;
 
@@ -188,6 +330,7 @@ export async function convertToFountain(
 	scriptText: string,
 	onProgress?: (message: string) => void
 ): Promise<string> {
+	await ensureModel(host, model, onProgress);
 	onProgress?.("Connecting to Ollama…");
 
 	const url = `${host.replace(/\/$/, "")}/api/chat`;
