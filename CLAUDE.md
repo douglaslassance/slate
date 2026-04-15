@@ -9,6 +9,10 @@ Follow Obsidian's UI convention of **sentence case** (not title case) for all us
 
 Proper nouns and acronyms (e.g. MFLUX, Ollama) are still capitalised as normal.
 
+## Punctuation
+
+Do not use em dashes (—) or en dashes (–) anywhere in the codebase: not in strings, prompts, comments, or UI text. Use a hyphen (-) or reword the sentence instead.
+
 ## Generated note content
 
 Obsidian has a "Show inline title" setting (Appearance → Show inline title, on by default) that displays the filename as a title. When generating notes, check `(app.vault as any).config?.showInlineTitle !== false` and only prepend an `# H1` header if that setting is off.
