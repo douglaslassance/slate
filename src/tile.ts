@@ -20,18 +20,48 @@ function hexToRgba(hex: string): number {
 }
 
 /**
+ * Calculate the optimal column count so the tiled grid's aspect ratio is
+ * as close as possible to A4 (portrait 1/√2 ≈ 0.707, landscape √2 ≈ 1.414).
+ */
+export function calculateColumns(
+	imageCount: number,
+	imageWidth: number,
+	imageHeight: number,
+	padding: number,
+	orientation: "portrait" | "landscape"
+): number {
+	const targetRatio = orientation === "landscape" ? Math.SQRT2 : 1 / Math.SQRT2;
+
+	let bestCols = 1;
+	let bestDiff = Infinity;
+
+	for (let cols = 1; cols <= imageCount; cols++) {
+		const rows = Math.ceil(imageCount / cols);
+		const totalW = padding + cols * (imageWidth + padding);
+		const totalH = padding + rows * (imageHeight + padding);
+		const diff = Math.abs(totalW / totalH - targetRatio);
+		if (diff < bestDiff) {
+			bestDiff = diff;
+			bestCols = cols;
+		}
+	}
+
+	return bestCols;
+}
+
+/**
  * Composite a list of image files into a single tiled PNG.
  *
  * @param imagePaths   Ordered list of absolute file paths to the shot images.
  * @param outputPath   Absolute path where the tiled PNG will be saved.
- * @param columns      Number of columns in the grid (default 2).
+ * @param columns      Number of columns in the grid.
  * @param padding      Gap in pixels between images and around the border.
  * @param background   Background / padding colour as a CSS hex string ("#000000").
  */
 export async function tileImages(
 	imagePaths: string[],
 	outputPath: string,
-	columns: number = 2,
+	columns: number,
 	padding: number = 16,
 	background: string = "#000000"
 ): Promise<void> {

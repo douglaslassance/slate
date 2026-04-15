@@ -7,6 +7,7 @@ export interface SlateSettings {
 	ollamaModel: string;
 	breakdownLanguage: string;
 	breakdownCustomInstructions: string;
+	breakdownOutputFolder: string;
 
 	// ── Storyboard ─────────────────────────────────────────────────────────────
 	mfluxExecutable: string;
@@ -19,10 +20,9 @@ export interface SlateSettings {
 	mfluxHeight: number;
 	mfluxQuantize: number | null;
 	storyboardOutputType: "note" | "image";
-	storyboardTileColumns: number;
+	storyboardTileOrientation: "portrait" | "landscape";
 	storyboardTilePadding: number;
 	storyboardTileBackground: string;
-	storyboardDeleteIndividualImages: boolean;
 }
 
 export const DEFAULT_SETTINGS: SlateSettings = {
@@ -30,6 +30,7 @@ export const DEFAULT_SETTINGS: SlateSettings = {
 	ollamaModel: "mistral:latest",
 	breakdownLanguage: "",
 	breakdownCustomInstructions: "",
+	breakdownOutputFolder: "",
 
 	mfluxExecutable: "",
 	storyboardImageName: "Shot #",
@@ -41,10 +42,9 @@ export const DEFAULT_SETTINGS: SlateSettings = {
 	mfluxHeight: 576,
 	mfluxQuantize: 4,
 	storyboardOutputType: "note",
-	storyboardTileColumns: 2,
+	storyboardTileOrientation: "portrait",
 	storyboardTilePadding: 16,
 	storyboardTileBackground: "#000000",
-	storyboardDeleteIndividualImages: false,
 };
 
 export class SlateSettingTab extends PluginSettingTab {
@@ -137,6 +137,24 @@ export class SlateSettingTab extends PluginSettingTab {
 				return text;
 			});
 
+		new Setting(containerEl)
+			.setName("Output folder")
+			.setDesc(
+				"Where to create the scene folder for each breakdown. " +
+				"Leave empty to place it next to the source file. " +
+				"Start with / for a vault-root path (e.g. /Breakdowns), " +
+				"or use a relative path (e.g. Breakdowns) to place it relative to the source file."
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("Same folder as source file")
+					.setValue(this.plugin.settings.breakdownOutputFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.breakdownOutputFolder = value.trim();
+						await this.plugin.saveSettings();
+					})
+			);
+
 		// ── Storyboard ──────────────────────────────────────────────────────────
 		containerEl.createEl("h2", { text: "Storyboard" });
 
@@ -213,7 +231,7 @@ export class SlateSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Style image path")
-			.setDesc("Absolute path to a reference image or a folder of images used as style input (up to 4 images from the folder). Leave empty to disable.")
+			.setDesc("Path to a reference image or a folder of images used as style input (up to 4 images from the folder). Start with / for an absolute path; otherwise relative to the vault root (e.g. Assets/Style). Leave empty to disable.")
 			.addText((text) =>
 				text
 					.setPlaceholder("/path/to/style-reference.png")
@@ -289,21 +307,20 @@ export class SlateSettingTab extends PluginSettingTab {
 
 		const showTile = this.plugin.settings.storyboardOutputType === "image";
 
-		const colSetting = new Setting(containerEl)
-			.setName("Columns")
-			.setDesc("Number of columns in the tiled image.")
-			.addSlider((slider) =>
-				slider
-					.setLimits(1, 6, 1)
-					.setValue(this.plugin.settings.storyboardTileColumns)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.storyboardTileColumns = value;
+		const orientationSetting = new Setting(containerEl)
+			.setName("Orientation")
+			.setDesc("Column count is calculated automatically to match A4 proportions.")
+			.addDropdown((drop) =>
+				drop
+					.addOptions({ portrait: "Portrait", landscape: "Landscape" })
+					.setValue(this.plugin.settings.storyboardTileOrientation)
+					.onChange(async (value: "portrait" | "landscape") => {
+						this.plugin.settings.storyboardTileOrientation = value;
 						await this.plugin.saveSettings();
 					})
 			);
-		colSetting.settingEl.toggle(showTile);
-		tileSettings.push(colSetting);
+		orientationSetting.settingEl.toggle(showTile);
+		tileSettings.push(orientationSetting);
 
 		const padSetting = new Setting(containerEl)
 			.setName("Padding")
@@ -333,18 +350,5 @@ export class SlateSettingTab extends PluginSettingTab {
 		bgSetting.settingEl.toggle(showTile);
 		tileSettings.push(bgSetting);
 
-		const deleteSetting = new Setting(containerEl)
-			.setName("Delete individual images after tiling")
-			.setDesc("Remove the shot images folder once the tiled image has been generated.")
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.storyboardDeleteIndividualImages)
-					.onChange(async (value) => {
-						this.plugin.settings.storyboardDeleteIndividualImages = value;
-						await this.plugin.saveSettings();
-					})
-			);
-		deleteSetting.settingEl.toggle(showTile);
-		tileSettings.push(deleteSetting);
 	}
 }

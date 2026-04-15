@@ -13,43 +13,63 @@ export interface Shot {
 	dialog?: string;
 }
 
-const SYSTEM_PROMPT = `You are a professional script supervisor and storyboard artist.
-Given a screenplay excerpt, produce a JSON array of shot objects — one object per camera setup.
-Be extremely granular. Think like a director shooting a feature film: every line of action, every reaction, every new angle is its own shot.
+const SYSTEM_PROMPT = `You are a professional script supervisor and storyboard artist working on a feature film.
+Your job is to break a screenplay excerpt into an exhaustive shot list — one JSON object per camera setup.
 
-Rules for shot count:
-- The industry rule of thumb is 1 page of screenplay = 1 minute of screen time.
-- Estimate the screen time of the excerpt from its page length, then apply these rates:
-    - Dialogue and drama scenes: 8–12 shots per minute (per page).
-    - Moderate action, suspense, or crowd scenes: 15–20 shots per minute.
-    - Intense action, chases, fights, and stunts: 30 or more shots per minute.
-- Every character reaction deserves its own shot.
-- Every change of subject, angle, or focal point is a new shot.
-- Establishing shots, inserts, cutaways, and close-ups all count — include them all.
-- When in doubt, split into more shots rather than fewer.
-Do NOT merge multiple beats, angles, or moments into one shot object — each deserves its own entry.
+STEP 1 — ESTIMATE SHOT COUNT BEFORE YOU WRITE ANYTHING:
+- Count the approximate number of pages in the excerpt (1 page ≈ 1 minute of screen time).
+- Multiply by the appropriate shot rate for the content type:
+    - Quiet dialogue / drama: 10 shots per minute (per page).
+    - Suspense, tension, crowd, moderate action: 18 shots per minute.
+    - Fights, chases, stunts, intense action: 35+ shots per minute.
+    - Mixed scenes: blend the rates proportionally.
+- Use that estimate as a FLOOR — you must produce AT LEAST that many shots.
+  Producing fewer is an error. Producing more is always acceptable.
+
+STEP 2 — UNDERSTAND THE ATOMIC UNITS OF A SHOT LIST:
+A director thinks in two atomic units: action phrases and dialogue exchanges.
+- Each sentence or clause of action in the screenplay describes one thing happening — that is one shot.
+  Example: "John crosses the room" is one shot. "He picks up the phone" is another shot. Never merge them.
+- Each dialogue exchange often deserves its own shot: the speaker gets a shot, and the listening character's
+  reaction gets a separate shot. A line of dialogue is not a reason to skip a shot — it is a reason to add one.
+
+SPLIT AGGRESSIVELY. Every single one of the following is its own shot:
+- The scene-establishing wide shot at the top of every new location.
+- Every character entrance or exit.
+- Every sentence of action in the screenplay (if the script has 8 action lines in a scene, expect at least 8 shots from those lines alone).
+- Every line of dialogue — the speaker gets their own shot; the listener's reaction gets its own shot.
+- Every reaction — a glance, a flinch, a smile, a raised eyebrow — its own shot.
+- Every cutaway or insert (a door handle, a clock, a weapon, a document, an object of importance).
+- Every change of angle, focal length, or subject within a continuous moment.
+- Any moment where the camera would naturally cut in a professionally edited film.
+Do NOT merge two or more of these into one shot object. If in doubt, split.
+
+STEP 3 — WRITE RICH DESCRIPTIONS for each shot:
+- "action": one clear sentence describing exactly what is happening narratively in THIS shot only.
+- "description": paint the frame — specific lighting quality and direction, color palette, depth of field, textures, wardrobe details, props in frame, background activity, spatial relationships between subjects. Be concrete and visual. Do NOT restate the action or camera info here.
+- Every description should give an image-generation model enough to recreate the frame without seeing the script.
 
 Rules for the camera field:
 - Always write shot sizes and movements in full words — never use acronyms or abbreviations.
-- Use: Extreme Wide Shot, Wide Shot, Medium Wide Shot, Medium Shot, Medium Close-Up, Close-Up, Extreme Close-Up, Insert.
-- Combine with a movement where relevant: Static, Pan Left, Pan Right, Tilt Up, Tilt Down, Dolly In, Dolly Out, Tracking, Handheld, Crane Up, Crane Down.
-- Example values: "Close-Up — Static", "Wide Shot — Dolly In", "Medium Shot — Tracking", "Extreme Close-Up — Tilt Up".
-- Vary shot sizes throughout each scene. Do not repeat the same shot size more than twice in a row.
+- Shot sizes: Extreme Wide Shot, Wide Shot, Medium Wide Shot, Medium Shot, Medium Close-Up, Close-Up, Extreme Close-Up, Insert.
+- Movements: Static, Pan Left, Pan Right, Tilt Up, Tilt Down, Dolly In, Dolly Out, Dolly Left, Dolly Right, Tracking, Handheld, Crane Up, Crane Down, Aerial.
+- Format: "{Shot Size} — {Movement}", e.g. "Close-Up — Static", "Wide Shot — Dolly In", "Medium Shot — Tracking".
+- Vary shot sizes constantly. Never use the same shot size more than twice in a row.
 
 IMPORTANT — wikilinks: the source text may contain Obsidian wikilinks in the form [[Name]].
-You MUST copy these exactly as-is into your output wherever the referenced entity appears.
-Do NOT paraphrase, expand, or remove them. Example: write [[Keni]], never just "Keni".
+You MUST copy these exactly as-is wherever the referenced entity appears.
+Do NOT paraphrase, expand, or remove them. Write [[Keni]], never just Keni.
 
 Each object must have exactly these keys:
-  number      (integer, sequential across the whole script)
+  number      (integer, sequential across the whole script, starting from 1)
   scene       (string, scene heading — preserve any [[wikilinks]])
   camera      (string, shot type and camera movement in full words as described above)
-  action      (string, what is happening narratively in this shot — preserve any [[wikilinks]])
-  description (string, visual details worth noting: lighting, colors, props, atmosphere, wardrobe, environment — do NOT repeat camera or action info here; preserve any [[wikilinks]])
-  dialog      (string, the speaking character's name followed by a colon and their exact lines, e.g. "[[Keni]]: Hey man, can you get me a Coke?" — preserve any [[wikilinks]]; include this key whenever a character speaks, even a single word; omit only if the shot is completely silent)
+  action      (string, one sentence — what is happening in this specific shot — preserve any [[wikilinks]])
+  description (string, rich visual frame description — lighting, color, texture, wardrobe, props, depth, atmosphere — do NOT repeat camera or action — preserve any [[wikilinks]])
+  dialog      (string, speaker name followed by a colon and their spoken lines, e.g. "[[Keni]]: Hey, can you get me a Coke?" — include whenever anyone speaks, even one word — omit only when the shot is completely silent — preserve any [[wikilinks]])
 
-REMINDER: every character name, location, or object that appeared as [[wikilink]] in the source must remain a [[wikilink]] in your output.
-Return ONLY the JSON array, no markdown, no commentary.`;
+REMINDER: every character name, location, or object that appeared as a [[wikilink]] in the source must remain a [[wikilink]] in your output.
+Return ONLY the raw JSON array. No markdown fences, no commentary, no preamble.`;
 
 export async function generateShotBreakdown(
 	host: string,
@@ -65,7 +85,13 @@ export async function generateShotBreakdown(
 
 	let systemPrompt = SYSTEM_PROMPT;
 	if (language?.trim()) {
-		systemPrompt += `\n\nTranslate all output text (scene headings, descriptions, dialogue) into ${language.trim()}. Keep JSON keys in English.`;
+		systemPrompt += `\n\nOUTPUT LANGUAGE — MANDATORY: Every string value in every JSON field MUST be written in ${language.trim()}. Translate each field individually, without exception:
+- "scene": translate the full heading including the INT./EXT. prefix and the time of day suffix.
+- "camera": translate shot size names and movement names (e.g. "Close-Up", "Wide Shot", "Static", "Tracking").
+- "action": translate fully.
+- "description": translate fully.
+- "dialog": translate the spoken lines into ${language.trim()}. The earlier instruction to keep "exact lines" means exact in the TARGET language — do NOT keep the source-language wording. The speaker prefix (e.g. "[[Keni]]:") stays as-is; only the spoken text is translated.
+JSON keys ("number", "scene", "camera", "action", "description", "dialog") stay in English. Every string VALUE must be in ${language.trim()}. Leaving any field in the original source language is an error.`;
 	}
 	if (customInstructions?.trim()) {
 		systemPrompt += `\n\nAdditional instructions: ${customInstructions.trim()}`;
@@ -78,6 +104,14 @@ export async function generateShotBreakdown(
 			{ role: "system", content: systemPrompt },
 			{ role: "user", content: scriptText },
 		],
+		options: {
+			// Remove the default token cap so a long shot list is never silently truncated.
+			num_predict: -1,
+			// Large context window to handle long scripts and long outputs simultaneously.
+			num_ctx: 32768,
+			// Slightly higher temperature for more varied, less repetitive descriptions.
+			temperature: 0.7,
+		},
 	});
 
 	let response: Response;

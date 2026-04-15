@@ -23,28 +23,33 @@ export interface GeneratedImage {
  * Returns an empty array if the path is empty or doesn't exist.
  * Caps at MAX_STYLE_IMAGES.
  */
-async function resolveStyleImages(stylePath: string): Promise<string[]> {
+async function resolveStyleImages(stylePath: string, vaultBasePath: string): Promise<string[]> {
 	if (!stylePath) return [];
+
+	// Resolve relative paths against the vault root.
+	// A path starting with "/" is treated as absolute; anything else is relative.
+	const resolvedPath = stylePath.startsWith("/") ? stylePath : join(vaultBasePath, stylePath);
 
 	let info;
 	try {
-		info = await stat(stylePath);
+		info = await stat(resolvedPath);
 	} catch {
-		console.warn("[Slate] Style image path not found:", stylePath);
+		console.warn("[Slate] Style image path not found:", resolvedPath);
 		return [];
 	}
 
 	if (info.isFile()) {
-		return [stylePath];
+		console.log("[Slate] Using single style image:", resolvedPath);
+		return [resolvedPath];
 	}
 
 	if (info.isDirectory()) {
-		const entries = await readdir(stylePath);
+		const entries = await readdir(resolvedPath);
 		const images = entries
 			.filter((f) => IMAGE_EXTENSIONS.has(extname(f).toLowerCase()))
 			.sort()
 			.slice(0, MAX_STYLE_IMAGES)
-			.map((f) => join(stylePath, f));
+			.map((f) => join(resolvedPath, f));
 		console.log(`[Slate] Found ${images.length} style image(s) in folder:`, images);
 		return images;
 	}
@@ -127,13 +132,14 @@ export async function generateStoryboardImages(
 	shots: Shot[],
 	outputDir: string,
 	settings: SlateSettings,
+	vaultBasePath: string,
 	onProgress?: (message: string, index: number, total: number) => void,
 	onImageGenerated?: (image: GeneratedImage) => Promise<void>,
 	resolvedDescriptions?: string[]
 ): Promise<GeneratedImage[]> {
 	const results: GeneratedImage[] = [];
 	const executable = await resolveMfluxExecutable(settings.mfluxExecutable);
-	const styleImages = await resolveStyleImages(settings.mfluxStyleImagePath);
+	const styleImages = await resolveStyleImages(settings.mfluxStyleImagePath, vaultBasePath);
 
 	if (styleImages.length > 0) {
 		console.log(`[Slate] Using ${styleImages.length} style image(s):`, styleImages);
@@ -141,7 +147,7 @@ export async function generateStoryboardImages(
 
 	for (let i = 0; i < shots.length; i++) {
 		const shot = shots[i];
-		const filename = `${settings.storyboardImageName.replace("#", String(shot.number))}.png`;
+		const filename = `${(settings.storyboardImageName || "Shot #").replace("#", String(shot.number))}.png`;
 		const filePath = `${outputDir}/${filename}`;
 
 		onProgress?.(`Generating image for shot ${shot.number}…`, i, shots.length);
@@ -152,6 +158,7 @@ export async function generateStoryboardImages(
 			: description;
 		const command = buildCommand(executable, settings, prompt, filePath, styleImages);
 
+		console.log(`[Slate] Shot ${shot.number} command:`, command);
 		try {
 			await execFileAsync("/bin/zsh", ["-l", "-c", command], {
 				timeout: 10 * 60 * 1000,
