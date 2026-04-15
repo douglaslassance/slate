@@ -58,6 +58,31 @@ async function resolveStyleImages(stylePath: string, vaultBasePath: string): Pro
 }
 
 /**
+ * Parse LoRA paths and scales from the settings strings.
+ * Paths are one per line; scales are one per line in matching order.
+ * Any path without a corresponding scale defaults to 1.0.
+ * Relative paths are resolved against the vault root.
+ */
+function resolveLoraArgs(settings: SlateSettings, vaultBasePath: string): { paths: string[]; scales: number[] } {
+	const paths = settings.mfluxLoraPaths
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean)
+		.map((p) => (p.startsWith("/") ? p : join(vaultBasePath, p)));
+
+	const scales = settings.mfluxLoraScales
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean)
+		.map((s) => parseFloat(s));
+
+	// Fill missing scales with 1.0.
+	const paddedScales = paths.map((_, i) => (Number.isFinite(scales[i]) ? scales[i] : 1.0));
+
+	return { paths, scales: paddedScales };
+}
+
+/**
  * Build the mflux CLI argument string for a single shot.
  * When style images are provided, uses mflux-generate-flux2-edit with --image-paths.
  * Otherwise uses mflux-generate-flux2 for plain text-to-image generation.
@@ -67,7 +92,8 @@ function buildCommand(
 	settings: SlateSettings,
 	prompt: string,
 	outputPath: string,
-	styleImages: string[]
+	styleImages: string[],
+	loras: { paths: string[]; scales: number[] }
 ): string {
 	const hasStyleImages = styleImages.length > 0;
 	const activeExecutable = hasStyleImages
@@ -92,8 +118,14 @@ function buildCommand(
 		args.push(["--image-paths", styleImages.map(shellEscape).join(" ")]);
 	}
 
+	if (loras.paths.length > 0) {
+		args.push(["--lora-paths", loras.paths.map(shellEscape).join(" ")]);
+		args.push(["--lora-scales", loras.scales.join(" ")]);
+	}
+
+	const multiValueFlags = new Set(["--image-paths", "--lora-paths", "--lora-scales"]);
 	const argStr = args
-		.map(([flag, value]) => `${flag} ${flag === "--image-paths" ? value : shellEscape(value)}`)
+		.map(([flag, value]) => `${flag} ${multiValueFlags.has(flag) ? value : shellEscape(value)}`)
 		.join(" ");
 
 	return `${shellEscape(activeExecutable)} ${argStr}`;
@@ -140,9 +172,13 @@ export async function generateStoryboardImages(
 	const results: GeneratedImage[] = [];
 	const executable = await resolveMfluxExecutable(settings.mfluxExecutable);
 	const styleImages = await resolveStyleImages(settings.mfluxStyleImagePath, vaultBasePath);
+	const loras = resolveLoraArgs(settings, vaultBasePath);
 
 	if (styleImages.length > 0) {
 		console.log(`[Slate] Using ${styleImages.length} style image(s):`, styleImages);
+	}
+	if (loras.paths.length > 0) {
+		console.log(`[Slate] Using ${loras.paths.length} LoRA(s):`, loras.paths, "scales:", loras.scales);
 	}
 
 	for (let i = 0; i < shots.length; i++) {
@@ -156,7 +192,7 @@ export async function generateStoryboardImages(
 		const prompt = settings.mfluxPromptHeader
 			? `${settings.mfluxPromptHeader.trim()} ${description}`
 			: description;
-		const command = buildCommand(executable, settings, prompt, filePath, styleImages);
+		const command = buildCommand(executable, settings, prompt, filePath, styleImages, loras);
 
 		console.log(`[Slate] Shot ${shot.number} command:`, command);
 		try {

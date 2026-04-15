@@ -283,7 +283,7 @@ export default class SlatePlugin extends Plugin {
 					// Wikilinks are stripped - mflux has no knowledge of them.
 
 					const resolvedDescriptions = shots.map((s) => {
-						const shotText = `${s.action} ${s.description} ${s.dialog ?? ""}`;
+						const shotText = `${s.scene} ${s.action} ${s.description} ${s.dialog ?? ""}`;
 						const featured = Object.entries(linkSummaries).filter(([name]) =>
 							shotText.includes(`[[${name}]]`)
 						);
@@ -446,7 +446,7 @@ function buildShotPrompt(
 ): string {
 	const body: string[] = [];
 
-	const shotText = `${shot.action} ${shot.description} ${shot.dialog ?? ""}`;
+	const shotText = `${shot.scene} ${shot.action} ${shot.description} ${shot.dialog ?? ""}`;
 	const featured = Object.entries(linkSummaries).filter(([name]) =>
 		shotText.includes(`[[${name}]]`)
 	);

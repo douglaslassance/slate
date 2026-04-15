@@ -23,7 +23,7 @@ export async function collectLinkContents(shots: Shot[], app: App): Promise<Reso
 	const visited = new Set<string>();
 	const results: ResolvedLink[] = [];
 
-	const allText = shots.flatMap((s) => [s.action, s.description, s.dialog ?? ""]).join(" ");
+	const allText = shots.flatMap((s) => [s.scene, s.action, s.description, s.dialog ?? ""]).join(" ");
 
 	for (const match of allText.matchAll(WIKILINK_RE)) {
 		const linkpath = match[1].trim();

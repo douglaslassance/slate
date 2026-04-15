@@ -20,6 +20,8 @@ export interface SlateSettings {
 	mfluxWidth: number;
 	mfluxHeight: number;
 	mfluxQuantize: number | null;
+	mfluxLoraPaths: string;
+	mfluxLoraScales: string;
 	storyboardOutputType: "note" | "image";
 	storyboardTileOrientation: "portrait" | "landscape";
 	storyboardTilePadding: number;
@@ -43,6 +45,8 @@ export const DEFAULT_SETTINGS: SlateSettings = {
 	mfluxWidth: 1024,
 	mfluxHeight: 576,
 	mfluxQuantize: 4,
+	mfluxLoraPaths: "",
+	mfluxLoraScales: "",
 	storyboardOutputType: "note",
 	storyboardTileOrientation: "portrait",
 	storyboardTilePadding: 16,
@@ -246,6 +250,36 @@ export class SlateSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
+
+		new Setting(containerEl)
+			.setName("LoRA paths")
+			.setDesc("One LoRA .safetensors file path per line. Start with / for an absolute path; otherwise relative to the vault root. Leave empty to disable.")
+			.addTextArea((text) => {
+				text
+					.setPlaceholder("/path/to/style.safetensors\n/path/to/another.safetensors")
+					.setValue(this.plugin.settings.mfluxLoraPaths)
+					.onChange(async (value) => {
+						this.plugin.settings.mfluxLoraPaths = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.rows = 3;
+				return text;
+			});
+
+		new Setting(containerEl)
+			.setName("LoRA scales")
+			.setDesc("One scale value per line, matching the order of LoRA paths above (e.g. 1.0). Defaults to 1.0 for any path without a corresponding scale.")
+			.addTextArea((text) => {
+				text
+					.setPlaceholder("1.0\n0.8")
+					.setValue(this.plugin.settings.mfluxLoraScales)
+					.onChange(async (value) => {
+						this.plugin.settings.mfluxLoraScales = value;
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.rows = 3;
+				return text;
+			});
 
 		new Setting(containerEl)
 			.setName("Style image path")
