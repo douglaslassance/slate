@@ -20,8 +20,7 @@ export interface SlateSettings {
 	mfluxWidth: number;
 	mfluxHeight: number;
 	mfluxQuantize: number | null;
-	mfluxLoraPaths: string;
-	mfluxLoraScales: string;
+	mfluxLoras: { path: string; scale: number }[];
 	storyboardOutputType: "note" | "image";
 	storyboardTileOrientation: "portrait" | "landscape";
 	storyboardTilePadding: number;
@@ -45,8 +44,7 @@ export const DEFAULT_SETTINGS: SlateSettings = {
 	mfluxWidth: 1024,
 	mfluxHeight: 576,
 	mfluxQuantize: 4,
-	mfluxLoraPaths: "",
-	mfluxLoraScales: "",
+	mfluxLoras: [],
 	storyboardOutputType: "note",
 	storyboardTileOrientation: "portrait",
 	storyboardTilePadding: 16,
@@ -64,6 +62,14 @@ export class SlateSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+
+		/** Make a Setting's control area expand full-width below its description. */
+		const fullWidth = (s: Setting): Setting => {
+			s.settingEl.style.flexDirection = "column";
+			s.settingEl.style.alignItems = "stretch";
+			s.controlEl.style.width = "100%";
+			return s;
+		};
 
 		// ── Shot Breakdown ──────────────────────────────────────────────────────
 		containerEl.createEl("h2", { text: "Shot breakdown" });
@@ -128,7 +134,7 @@ export class SlateSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		fullWidth(new Setting(containerEl)
 			.setName("Custom instructions")
 			.setDesc("Additional instructions appended to the breakdown prompt (e.g. \"Focus on action sequences, skip dialogue-only scenes\").")
 			.addTextArea((text) => {
@@ -139,9 +145,10 @@ export class SlateSettingTab extends PluginSettingTab {
 						this.plugin.settings.breakdownCustomInstructions = value;
 						await this.plugin.saveSettings();
 					});
-				text.inputEl.rows = 5;
+				text.inputEl.rows = 8;
+				text.inputEl.style.width = "100%";
 				return text;
-			});
+			}));
 
 		new Setting(containerEl)
 			.setName("Chunk size")
@@ -194,7 +201,7 @@ export class SlateSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Image name")
+			.setName("Shot name")
 			.setDesc("Filename template for each generated shot image. Use # as a placeholder for the shot number (e.g. \"Shot #\" → \"Shot 1.png\").")
 			.addText((text) =>
 				text
@@ -252,34 +259,87 @@ export class SlateSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("LoRA paths")
-			.setDesc("One LoRA .safetensors file path per line. Start with / for an absolute path; otherwise relative to the vault root. Leave empty to disable.")
-			.addTextArea((text) => {
-				text
-					.setPlaceholder("/path/to/style.safetensors\n/path/to/another.safetensors")
-					.setValue(this.plugin.settings.mfluxLoraPaths)
-					.onChange(async (value) => {
-						this.plugin.settings.mfluxLoraPaths = value;
+			.setName("LoRAs")
+			.setDesc((() => {
+				const frag = document.createDocumentFragment();
+				frag.append("LoRA adapters applied to every generated image. Accepts a local path (/ for absolute, otherwise relative to vault root) or a ");
+				const link = frag.appendChild(document.createElement("a"));
+				link.href = "https://huggingface.co/models?other=lora";
+				link.textContent = "Hugging Face";
+				link.target = "_blank";
+				link.rel = "noopener";
+				frag.append(" repo ID (e.g. username/my-lora).");
+				return frag;
+			})())
+			.addButton((btn) =>
+				btn
+					.setButtonText("Add LoRA")
+					.onClick(async () => {
+						this.plugin.settings.mfluxLoras.push({ path: "", scale: 1.0 });
 						await this.plugin.saveSettings();
-					});
-				text.inputEl.rows = 3;
-				return text;
-			});
+						renderLoraList();
+					})
+			);
 
-		new Setting(containerEl)
-			.setName("LoRA scales")
-			.setDesc("One scale value per line, matching the order of LoRA paths above (e.g. 1.0). Defaults to 1.0 for any path without a corresponding scale.")
-			.addTextArea((text) => {
-				text
-					.setPlaceholder("1.0\n0.8")
-					.setValue(this.plugin.settings.mfluxLoraScales)
-					.onChange(async (value) => {
-						this.plugin.settings.mfluxLoraScales = value;
-						await this.plugin.saveSettings();
-					});
-				text.inputEl.rows = 3;
-				return text;
+		const loraListEl = containerEl.createDiv();
+
+		const renderLoraList = () => {
+			loraListEl.empty();
+			this.plugin.settings.mfluxLoras.forEach((lora, index) => {
+				const row = new Setting(loraListEl)
+					.addText((text) => {
+						text
+							.setPlaceholder("username/my-lora or /path/to/lora.safetensors")
+							.setValue(lora.path)
+							.onChange(async (value) => {
+								this.plugin.settings.mfluxLoras[index].path = value.trim();
+								await this.plugin.saveSettings();
+							});
+						text.inputEl.style.flex = "1";
+						text.inputEl.style.minWidth = "0";
+						return text;
+					})
+					.addText((text) => {
+						const label = text.inputEl.insertAdjacentElement("beforebegin", createEl("span")) as HTMLSpanElement;
+						label.textContent = "Weight";
+						label.style.whiteSpace = "nowrap";
+						label.style.fontSize = "var(--font-smaller)";
+						label.style.color = "var(--text-muted)";
+						label.style.marginRight = "4px";
+						text
+							.setPlaceholder("1.0")
+							.setValue(String(lora.scale))
+							.onChange(async (value) => {
+								const n = parseFloat(value);
+								if (!isNaN(n) && n >= 0) {
+									this.plugin.settings.mfluxLoras[index].scale = n;
+									await this.plugin.saveSettings();
+								}
+							});
+						text.inputEl.type = "number";
+						text.inputEl.min = "0";
+						text.inputEl.max = "2";
+						text.inputEl.step = "0.1";
+						text.inputEl.style.width = "5em";
+						return text;
+					})
+					.addExtraButton((btn) =>
+						btn
+							.setIcon("trash")
+							.setTooltip("Remove")
+							.onClick(async () => {
+								this.plugin.settings.mfluxLoras.splice(index, 1);
+								await this.plugin.saveSettings();
+								renderLoraList();
+							})
+					);
+				// Hide the empty info area so controls span the full row width.
+				row.infoEl.style.display = "none";
+				row.controlEl.style.flexGrow = "1";
 			});
+		};
+
+		renderLoraList();
 
 		new Setting(containerEl)
 			.setName("Style image path")
@@ -294,7 +354,7 @@ export class SlateSettingTab extends PluginSettingTab {
 					})
 			);
 
-		new Setting(containerEl)
+		fullWidth(new Setting(containerEl)
 			.setName("Prompt header")
 			.setDesc("Text prepended to every shot prompt (e.g. a style or aesthetic description).")
 			.addTextArea((text) => {
@@ -305,9 +365,10 @@ export class SlateSettingTab extends PluginSettingTab {
 						this.plugin.settings.mfluxPromptHeader = value;
 						await this.plugin.saveSettings();
 					});
-				text.inputEl.rows = 5;
+				text.inputEl.rows = 8;
+				text.inputEl.style.width = "100%";
 				return text;
-			});
+			}));
 
 		new Setting(containerEl)
 			.setName("Image width")
