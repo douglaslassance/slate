@@ -1,5 +1,5 @@
 import { copyFile, rm, mkdtemp } from "fs/promises";
-import { tileImages } from "./tile";
+import { tileImages, calculateColumns } from "./tile";
 import { tmpdir } from "os";
 import { join } from "path";
 import { App, Notice, Plugin, TFile, normalizePath } from "obsidian";
@@ -53,23 +53,26 @@ export default class SlatePlugin extends Plugin {
 
 				notice.hide();
 
-				// Create a new note next to the original: "<Script Name> - Shot Breakdown.md"
+				// Output: {output folder}/{basename}/Breakdown.md
 				const baseName = activeFile.basename;
-				const folder = activeFile.parent?.path ?? "";
-				const breakdownPath = normalizePath(`${folder}/${baseName} - Shot Breakdown.md`);
+				const folder = resolveOutputFolder(activeFile, this.settings.breakdownOutputFolder);
+				const sceneVaultPath = normalizePath(`${folder}/${baseName}`);
+				const breakdownVaultPath = normalizePath(`${sceneVaultPath}/Breakdown.md`);
+
+				await ensureVaultFolder(sceneVaultPath, this.app);
 
 				const table = buildMarkdownTable(shots);
 				const content = inlineTitle(this.app)
 					? table
 					: `# ${baseName} — Shot breakdown\n\n${table}`;
 
-				const existing = this.app.vault.getAbstractFileByPath(breakdownPath);
+				const existing = this.app.vault.getAbstractFileByPath(breakdownVaultPath);
 				let breakdownFile: TFile;
 				if (existing instanceof TFile) {
 					await this.app.vault.modify(existing, content);
 					breakdownFile = existing;
 				} else {
-					breakdownFile = await this.app.vault.create(breakdownPath, content);
+					breakdownFile = await this.app.vault.create(breakdownVaultPath, content);
 				}
 
 				await this.app.workspace.getLeaf(false).openFile(breakdownFile);
@@ -128,6 +131,7 @@ export default class SlatePlugin extends Plugin {
 		});
 
 		// ── Command: Generate storyboard prompts ─────────────────────
+		// Run from Breakdown.md — its parent is the scene root.
 		this.addCommand({
 			id: "generate-storyboard-prompts",
 			name: "Generate storyboard prompts",
@@ -150,7 +154,6 @@ export default class SlatePlugin extends Plugin {
 				}
 
 				const notice = new Notice("Slate: Collecting links…", 0);
-
 				const linkContents = await collectLinkContents(shots, this.app);
 				notice.setMessage("Slate: Summarizing links…");
 				const linkSummaries = await summarizeLinks(
@@ -158,70 +161,44 @@ export default class SlatePlugin extends Plugin {
 					this.settings.ollamaModel,
 					linkContents
 				);
-
 				notice.hide();
 
-				const baseName = activeFile.basename.replace(/ Shot Breakdown$/, "");
-				const folder = activeFile.parent?.path ?? "";
-				const promptsPath = normalizePath(`${folder}/${baseName} Prompts.md`);
+				const sceneVaultPath = activeFile.parent?.path ?? "";
+				const storyboardFolderVaultPath = normalizePath(`${sceneVaultPath}/Storyboard`);
+				const rendersVaultPath = normalizePath(`${storyboardFolderVaultPath}/Renders`);
+				const promptsVaultPath = normalizePath(`${storyboardFolderVaultPath}/Prompts`);
+				await ensureVaultFolder(storyboardFolderVaultPath, this.app);
+				await ensureVaultFolder(rendersVaultPath, this.app);
+				await ensureVaultFolder(promptsVaultPath, this.app);
 
-				const lines: string[] = [];
+				let firstFile: TFile | null = null;
+
 				for (let i = 0; i < shots.length; i++) {
 					const shot = shots[i];
-					const body: string[] = [];
+					const shotName = (this.settings.storyboardImageName || "Shot #").replace("#", String(shot.number));
+					const promptVaultPath = normalizePath(`${promptsVaultPath}/${shotName}.md`);
 
-					const shotText = `${shot.action} ${shot.description} ${shot.dialog ?? ""}`;
-					const featured = Object.entries(linkSummaries).filter(([name]) =>
-						shotText.includes(`[[${name}]]`)
-					);
-
-					if (this.settings.mfluxPromptHeader) {
-						body.push(`### Art style\n${this.settings.mfluxPromptHeader.trim()}`);
-					}
-					if (featured.length > 0) {
-						body.push(
-							`### Featured in this shot\n${featured.map(([name, summary]) => `[[${name}]]: ${summary}`).join("\n\n")}`
-						);
-					}
-					body.push(`### Location\n${shot.scene}`);
-					body.push(`### Camera\n${shot.camera}`);
-					body.push(`### Action\n${shot.action}`);
-					body.push(`### Description\n${shot.description}`);
-					if (shot.dialog) {
-						body.push(`### Dialog\n${shot.dialog}`);
-					}
-					if (i > 0) {
-						const prev = shots[i - 1];
-						body.push(`### Previous shot\n${prev.action}\n\n${prev.description}`);
-					}
-					if (shot.dialog) {
-						body.push(`### Instructions\nSingle cinematic frame. Not a comic strip or panel sequence. The speaking character must be prominently featured. Display the dialog as visible text in the image — as a speech bubble, caption, or subtitle.`);
+					const promptContent = buildShotPrompt(shot, i, shots, linkSummaries, this.settings, shotName, rendersVaultPath, sceneVaultPath);
+					const existing = this.app.vault.getAbstractFileByPath(promptVaultPath);
+					let promptFile: TFile;
+					if (existing instanceof TFile) {
+						await this.app.vault.modify(existing, promptContent);
+						promptFile = existing;
 					} else {
-						body.push(`### Instructions\nSingle cinematic frame. Not a comic strip or panel sequence.`);
+						promptFile = await this.app.vault.create(promptVaultPath, promptContent);
 					}
-
-					lines.push(`## Shot ${shot.number}\n\n\`\`\`\n${body.join("\n\n")}\n\`\`\``);
+					if (!firstFile) firstFile = promptFile;
 				}
 
-				const promptsContent = inlineTitle(this.app)
-					? lines.join("\n\n")
-					: `# ${baseName} — Storyboard prompts\n\n${lines.join("\n\n")}`;
-
-				const existing = this.app.vault.getAbstractFileByPath(promptsPath);
-				let promptsFile: TFile;
-				if (existing instanceof TFile) {
-					await this.app.vault.modify(existing, promptsContent);
-					promptsFile = existing;
-				} else {
-					promptsFile = await this.app.vault.create(promptsPath, promptsContent);
+				if (firstFile) {
+					await this.app.workspace.getLeaf(false).openFile(firstFile);
 				}
-
-				await this.app.workspace.getLeaf(false).openFile(promptsFile);
 				new Notice(`Slate: Prompts ready — ${shots.length} shots.`);
 			},
 		});
 
 		// ── Command: Generate storyboard ─────────────────────────────
+		// Run from Breakdown.md — its parent is the scene root.
 		this.addCommand({
 			id: "generate-storyboard-images",
 			name: "Generate storyboard",
@@ -245,27 +222,25 @@ export default class SlatePlugin extends Plugin {
 
 				const notice = new Notice("Slate: Generating storyboard…", 0);
 
-				// Derive paths
-				const baseName = activeFile.basename.replace(/ Shot Breakdown$/, "");
-				const folder = activeFile.parent?.path ?? "";
-				const imagesFolderVaultPath = normalizePath(`${folder}/${baseName} Storyboard`);
-				const storyboardNotePath = normalizePath(`${folder}/${baseName} Storyboard.md`);
-
-				// Ensure the vault images folder exists
-				const existingFolder = this.app.vault.getAbstractFileByPath(imagesFolderVaultPath);
-				if (!existingFolder) {
-					await this.app.vault.createFolder(imagesFolderVaultPath);
-				}
-
-				// Absolute path to the vault images folder on disk
+				// Scene root = parent folder of Breakdown.md
+				const sceneVaultPath = activeFile.parent?.path ?? "";
+				const sceneName = activeFile.parent?.name ?? activeFile.basename;
+				const storyboardFolderVaultPath = normalizePath(`${sceneVaultPath}/Storyboard`);
+				const rendersVaultPath = normalizePath(`${storyboardFolderVaultPath}/Renders`);
+				const promptsVaultPath = normalizePath(`${storyboardFolderVaultPath}/Prompts`);
+				const storyboardNotePath = normalizePath(`${sceneVaultPath}/Storyboard.md`);
 				const vaultBasePath = (this.app.vault.adapter as any).basePath as string;
-				const imagesFolderDiskPath = join(vaultBasePath, imagesFolderVaultPath);
+				const sceneDiskPath = join(vaultBasePath, sceneVaultPath);
+				const rendersDiskPath = join(vaultBasePath, rendersVaultPath);
 
-				// Work in a temp dir — copy finished images into the vault folder
+				await ensureVaultFolder(storyboardFolderVaultPath, this.app);
+				await ensureVaultFolder(rendersVaultPath, this.app);
+				await ensureVaultFolder(promptsVaultPath, this.app);
+
 				const tempDir = await mkdtemp(join(tmpdir(), "slate-"));
 
 				try {
-					// 1. Resolve [[wikilinks]] to build enriched plain-text prompts for mflux
+					// 1. Resolve wikilinks
 					notice.setMessage("Slate: Collecting links…");
 					const linkContents = await collectLinkContents(shots, this.app);
 					notice.setMessage("Slate: Summarizing links…");
@@ -274,6 +249,12 @@ export default class SlatePlugin extends Plugin {
 						this.settings.ollamaModel,
 						linkContents
 					);
+
+					// 2. Build per-shot names and prompts
+					const shotNames = shots.map((s) =>
+						(this.settings.storyboardImageName || "Shot #").replace("#", String(s.number))
+					);
+
 					const resolvedDescriptions = shots.map((s, i) => {
 						const parts: string[] = [];
 						const shotText = `${s.action} ${s.description} ${s.dialog ?? ""}`;
@@ -296,21 +277,29 @@ export default class SlatePlugin extends Plugin {
 							const prev = shots[i - 1];
 							parts.push(`Previous shot: ${prev.action} ${prev.description}`);
 						}
-						parts.push(`Single cinematic frame. Not a comic strip or panel sequence.`);
+						parts.push(`Single cinematic frame. Not a comic strip or panel sequence. Each character must appear only once in the image — never duplicate the same person. Respect the camera instruction strictly: a Close-Up is a tight frame on the main subject filling most of the image, a Wide Shot shows the full environment with the subject small within it, a Medium Shot frames the subject from the waist up, and an Extreme Close-Up isolates a single detail.`);
 						return parts.join("\n\n");
 					});
 
-					// 2. Pre-compute filenames
-					const filenames = shots.map((s) =>
-						`${this.settings.storyboardImageName.replace("#", String(s.number))}.png`
-					);
+					// 3. Always write prompt files into Prompts/
+					for (let i = 0; i < shots.length; i++) {
+						const promptVaultPath = normalizePath(`${promptsVaultPath}/${shotNames[i]}.md`);
+						const promptContent = buildShotPrompt(shots[i], i, shots, linkSummaries, this.settings, shotNames[i], rendersVaultPath, sceneVaultPath);
+						const existing = this.app.vault.getAbstractFileByPath(promptVaultPath);
+						if (existing instanceof TFile) {
+							await this.app.vault.modify(existing, promptContent);
+						} else {
+							await this.app.vault.create(promptVaultPath, promptContent);
+						}
+					}
+
 					const outputAsImage = this.settings.storyboardOutputType === "image";
 
-					// Note mode: write the gallery note up front so images appear as they are copied in
+					// 4. Note mode: write the gallery note up front
 					if (!outputAsImage) {
 						const noteContent = inlineTitle(this.app)
-							? buildGalleryNote(imagesFolderVaultPath)
-							: `# ${baseName} — Storyboard\n\n${buildGalleryNote(imagesFolderVaultPath)}`;
+							? buildGalleryNote(rendersVaultPath)
+							: `# ${sceneName} — Storyboard\n\n${buildGalleryNote(rendersVaultPath)}`;
 						const existingNote = this.app.vault.getAbstractFileByPath(storyboardNotePath);
 						let storyboardFile: TFile;
 						if (existingNote instanceof TFile) {
@@ -322,37 +311,41 @@ export default class SlatePlugin extends Plugin {
 						await this.app.workspace.getLeaf(false).openFile(storyboardFile);
 					}
 
-					// 3. Generate individual shot images into temp dir, copying each into the vault as it completes
+					// 5. Generate images into temp dir, copy each to the Storyboard folder
 					const generatedImages = await generateStoryboardImages(
 						shots,
 						tempDir,
 						this.settings,
+						vaultBasePath,
 						(msg, i, total) => notice.setMessage(`Slate: ${msg} (${i + 1}/${total})`),
-						async ({ filePath }) => {
-							const filename = filePath.split("/").pop()!;
-							await copyFile(filePath, join(imagesFolderDiskPath, filename));
+						async ({ filePath, shot }) => {
+							const idx = shots.findIndex((s) => s.number === shot.number);
+							await copyFile(filePath, join(rendersDiskPath, `${shotNames[idx]}.png`));
 						},
 						resolvedDescriptions
 					);
 
-					// 4. Image mode: composite all shots into a single tiled PNG saved directly to the vault folder
+					// 6. Image mode: composite all shots into a single tiled PNG
 					if (outputAsImage) {
 						notice.setMessage("Slate: Compositing storyboard image…");
-						const imagePaths = generatedImages.map((g) => g.filePath);
-						const tileFilename = `${baseName} Storyboard.png`;
-						const tileDiskPath = join(vaultBasePath, folder ? folder + "/" : "", tileFilename);
+						const imagePaths = generatedImages.map((_, i) =>
+							join(rendersDiskPath, `${shotNames[i]}.png`)
+						);
+						const columns = calculateColumns(
+							imagePaths.length,
+							this.settings.mfluxWidth,
+							this.settings.mfluxHeight,
+							this.settings.storyboardTilePadding,
+							this.settings.storyboardTileOrientation ?? "portrait"
+						);
+						const tileDiskPath = join(sceneDiskPath, "Storyboard.png");
 						await tileImages(
 							imagePaths,
 							tileDiskPath,
-							this.settings.storyboardTileColumns,
+							columns,
 							this.settings.storyboardTilePadding,
 							this.settings.storyboardTileBackground
 						);
-						if (this.settings.storyboardDeleteIndividualImages) {
-							await rm(imagesFolderDiskPath, { recursive: true, force: true });
-							const vaultFolder = this.app.vault.getAbstractFileByPath(imagesFolderVaultPath);
-							if (vaultFolder) await this.app.vault.delete(vaultFolder, true);
-						}
 					}
 
 					notice.hide();
@@ -381,6 +374,83 @@ export default class SlatePlugin extends Plugin {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Resolve the vault-relative parent folder for a new scene folder.
+ *
+ * Rules (matches the setting description):
+ *  - Empty string  → same folder as the source file.
+ *  - Starts with / → vault-root-relative (the leading slash is stripped).
+ *  - Anything else → relative to the source file's folder.
+ */
+function resolveOutputFolder(sourceFile: TFile, outputFolderSetting: string): string {
+	const raw = outputFolderSetting.trim();
+	if (!raw) {
+		return sourceFile.parent?.path ?? "";
+	}
+	if (raw.startsWith("/")) {
+		// Vault-root path — strip the leading slash so normalizePath works correctly.
+		return normalizePath(raw.slice(1));
+	}
+	// Relative to the source file's folder.
+	const sourceFolder = sourceFile.parent?.path ?? "";
+	return normalizePath(sourceFolder ? `${sourceFolder}/${raw}` : raw);
+}
+
+async function ensureVaultFolder(vaultPath: string, app: App): Promise<void> {
+	if (!app.vault.getAbstractFileByPath(vaultPath)) {
+		await app.vault.createFolder(vaultPath);
+	}
+}
+
+/** Build the markdown content for a single shot's prompt file. */
+function buildShotPrompt(
+	shot: Shot,
+	index: number,
+	allShots: Shot[],
+	linkSummaries: Record<string, string>,
+	settings: SlateSettings,
+	shotName: string,
+	storyboardFolderVaultPath: string,
+	sceneVaultPath: string
+): string {
+	const body: string[] = [];
+
+	const shotText = `${shot.action} ${shot.description} ${shot.dialog ?? ""}`;
+	const featured = Object.entries(linkSummaries).filter(([name]) =>
+		shotText.includes(`[[${name}]]`)
+	);
+
+	if (settings.mfluxPromptHeader) {
+		body.push(`### Art style\n${settings.mfluxPromptHeader.trim()}`);
+	}
+	if (featured.length > 0) {
+		body.push(
+			`### Featured in this shot\n${featured.map(([name, summary]) => `[[${name}]]: ${summary}`).join("\n\n")}`
+		);
+	}
+	body.push(`### Location\n${shot.scene}`);
+	body.push(`### Camera\n${shot.camera}`);
+	body.push(`### Action\n${shot.action}`);
+	body.push(`### Description\n${shot.description}`);
+	if (shot.dialog) {
+		body.push(`### Dialog\n${shot.dialog}`);
+	}
+	if (index > 0) {
+		const prev = allShots[index - 1];
+		body.push(`### Previous shot\n${prev.action}\n\n${prev.description}`);
+	}
+	if (shot.dialog) {
+		body.push(`### Instructions\nSingle cinematic frame. Not a comic strip or panel sequence. Each character must appear only once in the image — never duplicate the same person. Respect the camera instruction strictly: a Close-Up is a tight frame on the main subject filling most of the image, a Wide Shot shows the full environment with the subject small within it, a Medium Shot frames the subject from the waist up, and an Extreme Close-Up isolates a single detail. Respect the camera instruction strictly: a Close-Up is a tight frame on the main subject filling most of the image, a Wide Shot shows the full environment with the subject small within it, a Medium Shot frames the subject from the waist up, and an Extreme Close-Up isolates a single detail. The speaking character must be prominently featured. Display the dialog as visible text in the image — as a speech bubble, caption, or subtitle.`);
+	} else {
+		body.push(`### Instructions\nSingle cinematic frame. Not a comic strip or panel sequence. Each character must appear only once in the image — never duplicate the same person. Respect the camera instruction strictly: a Close-Up is a tight frame on the main subject filling most of the image, a Wide Shot shows the full environment with the subject small within it, a Medium Shot frames the subject from the waist up, and an Extreme Close-Up isolates a single detail.`);
+	}
+
+	const imageEmbed = `![[${storyboardFolderVaultPath}/${shotName}.png]]`;
+	const breakdownLink = `[[${sceneVaultPath}/Breakdown|← Breakdown]]`;
+
+	return `${imageEmbed}\n\n\`\`\`\n${body.join("\n\n")}\n\`\`\`\n\n${breakdownLink}`;
+}
+
 function buildMarkdownTable(shots: Shot[]): string {
 	const header =
 		"| # | Scene | Camera | Action | Description | Dialog |\n" +
@@ -393,8 +463,8 @@ function buildMarkdownTable(shots: Shot[]): string {
 	return [header, ...rows].join("\n");
 }
 
-function esc(value: string): string {
-	return value.replace(/\|/g, "\\|").replace(/\n/g, " ");
+function esc(value: string | undefined | null): string {
+	return (value ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
 }
 
 /** Returns true when Obsidian is configured to show the filename as an inline title. */
@@ -402,15 +472,15 @@ function inlineTitle(app: App): boolean {
 	return (app.vault as any).config?.showInlineTitle !== false;
 }
 
-function buildGalleryNote(imagesFolderVaultPath: string): string {
-	return `\`\`\`img-gallery\ntype: vertical\nsort: asc\ncolumns: 1\npath: "${imagesFolderVaultPath}"\n\`\`\``;
+/** Build an img-gallery note pointing at the flat Storyboard folder. */
+function buildGalleryNote(storyboardFolderVaultPath: string): string {
+	return `\`\`\`img-gallery\ntype: vertical\nsort: asc\ncolumns: 1\npath: "${storyboardFolderVaultPath}"\n\`\`\``;
 }
 
 function parseShotsFromTable(content: string): Shot[] {
 	const lines = content.split("\n");
 	const shots: Shot[] = [];
 
-	// Detect column positions from the header row so old breakdowns still parse correctly.
 	let colScene = 2, colCamera = 3, colAction = 4, colDesc = 5, colDialog = 6;
 	for (const line of lines) {
 		if (!line.startsWith("|")) continue;
@@ -433,11 +503,11 @@ function parseShotsFromTable(content: string): Shot[] {
 
 		shots.push({
 			number: num,
-			scene:    cells[colScene]  ?? "",
-			camera:   cells[colCamera] ?? "",
-			action:   cells[colAction] ?? "",
-			description: cells[colDesc] ?? "",
-			dialog:   cells[colDialog] || undefined,
+			scene:       cells[colScene]  ?? "",
+			camera:      cells[colCamera] ?? "",
+			action:      cells[colAction] ?? "",
+			description: cells[colDesc]   ?? "",
+			dialog:      cells[colDialog] || undefined,
 		});
 	}
 
