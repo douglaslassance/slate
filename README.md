@@ -1,3 +1,7 @@
+# Slate
+
+Obsidian plugin to generate shot breakdowns and storyboards from screenplays.
+
 ## Features
 
 - **Shot breakdown** — paste a screenplay excerpt into a note and run _Generate shot breakdown_ to get a structured markdown table with scene headings, camera type, action, description, and dialogue for every shot. Wikilinks (`[[Character]]`, `[[Location]]`) in the source are preserved throughout.
