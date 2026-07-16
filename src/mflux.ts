@@ -1,11 +1,8 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { stat, readdir } from "fs/promises";
 import { join, extname } from "path";
 import type { Shot } from "./ollama";
 import type { SlateSettings } from "./settings";
-
-const execFileAsync = promisify(execFile);
+import { createImageProvider } from "./providers";
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".bmp"]);
 
@@ -76,82 +73,11 @@ function resolveLoraArgs(settings: SlateSettings, vaultBasePath: string): { path
 }
 
 /**
- * Build the mflux CLI argument string for a single shot.
- * When style images are provided, uses mflux-generate-flux2-edit with --image-paths.
- * Otherwise uses mflux-generate-flux2 for plain text-to-image generation.
- */
-function buildCommand(
-	executable: string,
-	settings: SlateSettings,
-	prompt: string,
-	outputPath: string,
-	styleImages: string[],
-	loras: { paths: string[]; scales: number[] }
-): string {
-	const hasStyleImages = styleImages.length > 0;
-	const activeExecutable = hasStyleImages
-		? executable.replace("mflux-generate-flux2", "mflux-generate-flux2-edit")
-		: executable;
-
-	const args: [string, string][] = [
-		["--model", settings.mfluxModel],
-		["--prompt", prompt],
-		["--output", outputPath],
-		["--steps", String(settings.mfluxSteps)],
-		["--width", String(settings.mfluxWidth)],
-		["--height", String(settings.mfluxHeight)],
-	];
-
-	if (settings.mfluxQuantize !== null) {
-		args.push(["--quantize", String(settings.mfluxQuantize)]);
-	}
-
-	if (hasStyleImages) {
-		// --image-paths accepts multiple space-separated paths
-		args.push(["--image-paths", styleImages.map(shellEscape).join(" ")]);
-	}
-
-	if (loras.paths.length > 0) {
-		args.push(["--lora-paths", loras.paths.map(shellEscape).join(" ")]);
-		args.push(["--lora-scales", loras.scales.join(" ")]);
-	}
-
-	const multiValueFlags = new Set(["--image-paths", "--lora-paths", "--lora-scales"]);
-	const argStr = args
-		.map(([flag, value]) => `${flag} ${multiValueFlags.has(flag) ? value : shellEscape(value)}`)
-		.join(" ");
-
-	return `${shellEscape(activeExecutable)} ${argStr}`;
-}
-
-function shellEscape(value: string): string {
-	return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
-/**
- * Resolve the full path of mflux-generate-flux2 via a login shell.
- */
-async function resolveMfluxExecutable(override: string): Promise<string> {
-	if (override) return override;
-
-	try {
-		const { stdout: pathOut } = await execFileAsync("/bin/zsh", ["-l", "-c", "echo $PATH"], { timeout: 5000 });
-		console.log("[Slate] Shell PATH:", pathOut.trim());
-
-		const { stdout: which } = await execFileAsync("/bin/zsh", ["-l", "-c", "which mflux-generate-flux2"], { timeout: 5000 });
-		const resolved = which.trim();
-		console.log("[Slate] Resolved mflux-generate-flux2:", resolved);
-		return resolved || "mflux-generate-flux2";
-		// mflux-generate-flux2-edit is resolved by replacing the binary name at command build time.
-	} catch (err) {
-		console.warn("[Slate] Could not resolve mflux-generate-flux2 via login shell:", err);
-		return "mflux-generate-flux2";
-	}
-}
-
-/**
- * Generate storyboard images for a list of shots using mflux.
- * Runs through a login shell so the full user PATH is available.
+ * Generate storyboard images for a list of shots.
+ *
+ * The active backend (local mflux or cloud fal.ai) is selected in settings and
+ * resolved via createImageProvider; this function only prepares each shot's
+ * prompt and inputs and writes the resulting PNGs.
  */
 export async function generateStoryboardImages(
 	shots: Shot[],
@@ -163,7 +89,7 @@ export async function generateStoryboardImages(
 	resolvedDescriptions?: string[]
 ): Promise<GeneratedImage[]> {
 	const results: GeneratedImage[] = [];
-	const executable = await resolveMfluxExecutable(settings.mfluxExecutable);
+	const provider = await createImageProvider(settings);
 	const styleImages = await resolveStyleImages(settings.mfluxStyleImagePath, vaultBasePath);
 	const loras = resolveLoraArgs(settings, vaultBasePath);
 
@@ -185,17 +111,19 @@ export async function generateStoryboardImages(
 		const prompt = settings.mfluxPromptHeader
 			? `${settings.mfluxPromptHeader.trim()} ${description}`
 			: description;
-		const command = buildCommand(executable, settings, prompt, filePath, styleImages, loras);
 
-		console.log(`[Slate] Shot ${shot.number} command:`, command);
-		try {
-			await execFileAsync("/bin/zsh", ["-l", "-c", command], {
-				timeout: 10 * 60 * 1000,
-			});
-		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			throw new Error(`mflux failed for shot ${shot.number}: ${msg}`);
-		}
+		await provider.generate({
+			prompt,
+			outputPath: filePath,
+			width: settings.mfluxWidth,
+			height: settings.mfluxHeight,
+			steps: settings.mfluxSteps,
+			model: settings.mfluxModel,
+			quantize: settings.mfluxQuantize,
+			styleImages,
+			loras,
+			shotNumber: shot.number,
+		});
 
 		const generated = { shot, filePath };
 		await onImageGenerated?.(generated);
