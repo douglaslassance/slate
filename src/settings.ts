@@ -11,6 +11,8 @@ export interface SlateSettings {
 	breakdownChunkSize: number;
 
 	// ── Storyboard ─────────────────────────────────────────────────────────────
+	imageProvider: "local" | "fal";
+	falApiKey: string;
 	mfluxExecutable: string;
 	storyboardImageName: string;
 	mfluxStyleImagePath: string;
@@ -35,6 +37,8 @@ export const DEFAULT_SETTINGS: SlateSettings = {
 	breakdownOutputFolder: "",
 	breakdownChunkSize: 750,
 
+	imageProvider: "local",
+	falApiKey: "",
 	mfluxExecutable: "",
 	storyboardImageName: "Shot #",
 	mfluxStyleImagePath: "",
@@ -188,17 +192,50 @@ export class SlateSettingTab extends PluginSettingTab {
 		containerEl.createEl("h2", { text: "Storyboard" });
 
 		new Setting(containerEl)
-			.setName("MFLUX executable path")
-			.setDesc("Full path to mflux-generate-flux2 (e.g. /usr/local/bin/mflux-generate-flux2). Leave empty to auto-resolve via login shell.")
-			.addText((text) =>
-				text
-					.setPlaceholder("/usr/local/bin/mflux-generate-flux2")
-					.setValue(this.plugin.settings.mfluxExecutable)
-					.onChange(async (value) => {
-						this.plugin.settings.mfluxExecutable = value.trim();
+			.setName("Backend")
+			.setDesc("Where to run image generation. Local (mflux) runs on this Mac with no cost (Apple Silicon only). Cloud (fal.ai) runs the same models remotely, works anywhere, and bills per image.")
+			.addDropdown((drop) =>
+				drop
+					.addOptions({ local: "Local (mflux)", fal: "Cloud (fal.ai)" })
+					.setValue(this.plugin.settings.imageProvider)
+					.onChange(async (value: "local" | "fal") => {
+						this.plugin.settings.imageProvider = value;
 						await this.plugin.saveSettings();
+						this.display();
 					})
 			);
+
+		if (this.plugin.settings.imageProvider === "fal") {
+			new Setting(containerEl)
+				.setName("fal.ai API key")
+				.setDesc("Your fal.ai key from fal.ai/dashboard/keys. Stored in this vault's plugin settings.")
+				.addText((text) => {
+					text
+						.setPlaceholder("fal key")
+						.setValue(this.plugin.settings.falApiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.falApiKey = value.trim();
+							await this.plugin.saveSettings();
+						});
+					text.inputEl.type = "password";
+					return text;
+				});
+		}
+
+		if (this.plugin.settings.imageProvider === "local") {
+			new Setting(containerEl)
+				.setName("MFLUX executable path")
+				.setDesc("Full path to mflux-generate-flux2 (e.g. /usr/local/bin/mflux-generate-flux2). Leave empty to auto-resolve via login shell.")
+				.addText((text) =>
+					text
+						.setPlaceholder("/usr/local/bin/mflux-generate-flux2")
+						.setValue(this.plugin.settings.mfluxExecutable)
+						.onChange(async (value) => {
+							this.plugin.settings.mfluxExecutable = value.trim();
+							await this.plugin.saveSettings();
+						})
+				);
+		}
 
 		new Setting(containerEl)
 			.setName("Shot name")
