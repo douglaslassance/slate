@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { Agent, setGlobalDispatcher } from "undici";
+import { MODEL as SHIPPED_MODEL } from "../src/ollama.ts";
 
 /**
  * Ollama answers /api/chat with stream:false, so it sends no headers at all
@@ -20,10 +21,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export const HOST = process.env.SLATE_TEST_HOST ?? "http://localhost:11434";
 
 /**
- * Model under test. Override to check a candidate model against the same
- * expectations, e.g. SLATE_TEST_MODEL=llama3.1:latest npm run test:live
+ * Model under test. Defaults to whatever the plugin actually ships, so the
+ * suites never drift from production. Override to measure a candidate before
+ * promoting it, e.g. SLATE_TEST_MODEL=llama3.1:latest npm run test:live
  */
-export const MODEL = process.env.SLATE_TEST_MODEL ?? "qwen2.5:32b";
+export const MODEL = process.env.SLATE_TEST_MODEL ?? SHIPPED_MODEL;
 
 /** Read a screenplay fixture from tests/fixtures. */
 export function fixture(name: string): string {

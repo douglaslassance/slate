@@ -1,11 +1,9 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type SlatePlugin from "./main";
-import { SUGGESTED_MODELS } from "./ollama";
 
 export interface SlateSettings {
 	// ── Shot Breakdown ─────────────────────────────────────────────────────────
 	ollamaHost: string;
-	ollamaModel: string;
 	breakdownLanguage: string;
 	breakdownCustomInstructions: string;
 	breakdownOutputFolder: string;
@@ -30,7 +28,6 @@ export interface SlateSettings {
 
 export const DEFAULT_SETTINGS: SlateSettings = {
 	ollamaHost: "http://localhost:11434",
-	ollamaModel: "qwen2.5:32b",
 	breakdownLanguage: "",
 	breakdownCustomInstructions: "",
 	breakdownOutputFolder: "",
@@ -77,7 +74,7 @@ export class SlateSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Ollama host")
-			.setDesc("URL of your local Ollama server.")
+			.setDesc("URL of your local Ollama server. Slate runs on qwen2.5:32b and pulls it automatically the first time you generate.")
 			.addText((text) =>
 				text
 					.setPlaceholder("http://localhost:11434")
@@ -87,23 +84,6 @@ export class SlateSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					})
 			);
-
-		new Setting(containerEl)
-			.setName("Ollama model")
-			.setDesc("Model to use for shot breakdown. If the model is not installed it will be pulled automatically when you run a command.")
-			.addDropdown((drop) => {
-				const current = this.plugin.settings.ollamaModel;
-				const names = SUGGESTED_MODELS.includes(current)
-					? SUGGESTED_MODELS
-					: [current, ...SUGGESTED_MODELS];
-				drop
-					.addOptions(Object.fromEntries(names.map((name) => [name, name])))
-					.setValue(current)
-					.onChange(async (value) => {
-						this.plugin.settings.ollamaModel = value;
-						await this.plugin.saveSettings();
-					});
-			});
 
 		new Setting(containerEl)
 			.setName("Output language")

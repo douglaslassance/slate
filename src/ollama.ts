@@ -72,15 +72,15 @@ Each object must have exactly these keys:
 REMINDER: every character name, location, or object that appeared as a [[wikilink]] in the source must remain a [[wikilink]] in your output.
 Return ONLY the raw JSON array. No markdown fences, no commentary, no preamble.`;
 
-export const SUGGESTED_MODELS = [
-	"qwen2.5:32b",
-	"qwen2.5:14b",
-	"qwen2.5:latest",
-	"codestral:latest",
-	"mistral:latest",
-	"llama3.1:latest",
-	"gemma2:latest",
-];
+/**
+ * The model Slate runs on. Deliberately not a setting.
+ *
+ * The system prompt is tuned around this model's willingness to split one
+ * action per shot, so swapping it silently changes the output quality. The
+ * `model` parameter on the functions below exists so the test suites can
+ * measure a candidate before it ever becomes the default.
+ */
+export const MODEL = "qwen2.5:32b";
 
 /**
  * Ensure a model is available locally, pulling it from the registry if not.

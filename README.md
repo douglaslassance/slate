@@ -23,7 +23,7 @@ when the model changes.
 ```bash
 npm test             # everything, live suites self-skip when Ollama is down
 npm run test:offline # script chunking only, no Ollama needed
-npm run test:live    # prompt quality against the configured model
+npm run test:live    # prompt quality against the shipped model
 npm run test:density # slow benchmark, see below
 ```
 

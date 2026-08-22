@@ -26,9 +26,14 @@ Obsidian has a "Show inline title" setting (Appearance → Show inline title, on
 
 ## Ollama model
 
-The default breakdown model is `qwen2.5:32b`, matching the switch made in the
-yello project. It replaced `codestral:latest`, and on the test scene fixture it
-produces about 20 shots where codestral produces 14.
+Slate runs on `qwen2.5:32b`, matching the yello project. It is a constant in
+`src/ollama.ts`, deliberately not a setting, because the system prompt is tuned
+around this model and a user swapping it silently degrades the output. The
+`model` parameter on the ollama.ts functions exists only so the test suites can
+measure a candidate before it is promoted.
+
+It replaced `codestral:latest`, and on the test scene fixture it produces about
+20 shots where codestral produces 14.
 
 Changing the default means re-running the live suites, because the prompt is
 tuned around the model's willingness to split one action per shot rather than
