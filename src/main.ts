@@ -468,7 +468,7 @@ function buildShotPrompt(
 	const imageEmbed = `![[${storyboardFolderVaultPath}/${shotName}.png]]`;
 	const breakdownLink = `[[${sceneVaultPath}/Breakdown|← Breakdown]]`;
 
-	return `${imageEmbed}\n\n\`\`\`\n${body.join("\n\n")}\n\`\`\`\n\n${breakdownLink}`;
+	return `\`\`\`\n${body.join("\n\n")}\n\`\`\`\n\n${imageEmbed}\n\n${breakdownLink}`;
 }
 
 function buildMarkdownTable(shots: Shot[]): string {
