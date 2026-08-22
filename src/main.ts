@@ -28,72 +28,16 @@ export default class SlatePlugin extends Plugin {
 					return;
 				}
 
-				const scriptText = (await this.app.vault.read(activeFile)).trim();
-				if (!scriptText) {
-					new Notice("Slate: The current note is empty.");
-					return;
-				}
-
 				const notice = new Notice("Slate: Generating shot breakdown…", 0);
-
-				const chunks = splitScriptIntoChunks(scriptText, this.settings.breakdownChunkSize);
-				const wordCount = scriptText.trim().split(/\s+/).length;
-				log(`${wordCount} words → ${chunks.length} chunk(s) → ${chunks.length} Ollama request(s).`);
-
-				let shots: Shot[] = [];
 				try {
-					for (let c = 0; c < chunks.length; c++) {
-						const chunk = chunks[c];
-						const chunkWords = chunk.trim().split(/\s+/).length;
-						const chunkLabel = chunks.length > 1 ? ` (part ${c + 1}/${chunks.length})` : "";
-						log(`Chunk ${c + 1}/${chunks.length}: ${chunkWords} words — sending to Ollama (${this.settings.ollamaModel})…`);
-						const chunkShots = await generateShotBreakdown(
-							this.settings.ollamaHost,
-							this.settings.ollamaModel,
-							chunk,
-							this.settings.breakdownLanguage,
-							this.settings.breakdownCustomInstructions,
-							(msg) => notice.setMessage(`Slate: ${msg}${chunkLabel}`)
-						);
-						log(`Chunk ${c + 1}/${chunks.length}: ${chunkShots.length} shots returned.`);
-						shots.push(...chunkShots);
-					}
-					// Renumber shots sequentially across all chunks.
-					shots = shots.map((s, i) => ({ ...s, number: i + 1 }));
-					log(`Breakdown complete: ${shots.length} total shots.`);
+					const { shots, breakdownFile } = await this.runShotBreakdown(activeFile, notice);
+					notice.hide();
+					await this.app.workspace.getLeaf(false).openFile(breakdownFile);
+					new Notice(`Slate: Shot breakdown complete: ${shots.length} shots.`);
 				} catch (err) {
 					notice.hide();
-					new Notice(`Slate error: ${err instanceof Error ? err.message : String(err)}`, 8000);
-					console.error("[Slate]", err);
-					return;
+					reportError(err);
 				}
-
-				notice.hide();
-
-				// Output: {output folder}/{basename}/Breakdown.md
-				const baseName = activeFile.basename;
-				const folder = resolveOutputFolder(activeFile, this.settings.breakdownOutputFolder);
-				const sceneVaultPath = normalizePath(`${folder}/${baseName}`);
-				const breakdownVaultPath = normalizePath(`${sceneVaultPath}/Breakdown.md`);
-
-				await ensureVaultFolder(sceneVaultPath, this.app);
-
-				const table = buildMarkdownTable(shots);
-				const content = inlineTitle(this.app)
-					? table
-					: `# ${baseName} - Shot breakdown\n\n${table}`;
-
-				const existing = this.app.vault.getAbstractFileByPath(breakdownVaultPath);
-				let breakdownFile: TFile;
-				if (existing instanceof TFile) {
-					await this.app.vault.modify(existing, content);
-					breakdownFile = existing;
-				} else {
-					breakdownFile = await this.app.vault.create(breakdownVaultPath, content);
-				}
-
-				await this.app.workspace.getLeaf(false).openFile(breakdownFile);
-				new Notice(`Slate: Shot breakdown complete: ${shots.length} shots.`);
 			},
 		});
 
@@ -215,7 +159,7 @@ export default class SlatePlugin extends Plugin {
 		});
 
 		// ── Command: Generate storyboard ─────────────────────────────
-		// Run from Breakdown.md — its parent is the scene root.
+		// Run from Breakdown.md, whose parent folder is the scene root.
 		this.addCommand({
 			id: "generate-storyboard-images",
 			name: "Generate storyboard",
@@ -226,9 +170,7 @@ export default class SlatePlugin extends Plugin {
 					return;
 				}
 
-				const content = await this.app.vault.read(activeFile);
-				const shots = parseShotsFromTable(content);
-
+				const shots = parseShotsFromTable(await this.app.vault.read(activeFile));
 				if (shots.length === 0) {
 					new Notice(
 						'Slate: No shot breakdown table found. Run "Generate shot breakdown" first.',
@@ -238,159 +180,271 @@ export default class SlatePlugin extends Plugin {
 				}
 
 				const notice = new Notice("Slate: Generating storyboard…", 0);
-
-				// Scene root = parent folder of Breakdown.md
-				const sceneVaultPath = activeFile.parent?.path ?? "";
-				const sceneName = activeFile.parent?.name ?? activeFile.basename;
-				const storyboardFolderVaultPath = normalizePath(`${sceneVaultPath}/Storyboard`);
-				const rendersVaultPath = normalizePath(`${storyboardFolderVaultPath}/Renders`);
-				const promptsVaultPath = normalizePath(`${storyboardFolderVaultPath}/Prompts`);
-				const storyboardNotePath = normalizePath(`${sceneVaultPath}/Storyboard.md`);
-				const vaultBasePath = (this.app.vault.adapter as any).basePath as string;
-				const sceneDiskPath = join(vaultBasePath, sceneVaultPath);
-				const rendersDiskPath = join(vaultBasePath, rendersVaultPath);
-
-				await ensureVaultFolder(storyboardFolderVaultPath, this.app);
-				await ensureVaultFolder(rendersVaultPath, this.app);
-				await ensureVaultFolder(promptsVaultPath, this.app);
-
-				const tempDir = await mkdtemp(join(tmpdir(), "slate-"));
-
 				try {
-					// 1. Resolve wikilinks
-					notice.setMessage("Slate: Collecting links…");
-					const linkContents = await collectLinkContents(shots, this.app);
-					log(`Found ${linkContents.length} wikilink(s) to summarize.`);
-					notice.setMessage("Slate: Summarizing links…");
-					if (linkContents.length > 0) {
-						log(`Sending ${linkContents.length} link(s) to Ollama for summarization…`);
-					}
-					const linkSummaries = await summarizeLinks(
-						this.settings.ollamaHost,
-						this.settings.ollamaModel,
-						linkContents
-					);
-					log(`Link summarization done: ${Object.keys(linkSummaries).length} summary/summaries.`);
-
-					// 2. Build per-shot names and prompts
-					const shotNames = shots.map((s) =>
-						(this.settings.storyboardImageName || "Shot #").replace("#", String(s.number))
-					);
-
-					// Build natural-language prompts for FLUX's T5 encoder.
-					// Order: character appearances, subject+action, framing, dialog.
-					// FLUX weights earlier tokens more heavily, so subject comes first.
-					// Wikilinks are stripped - mflux has no knowledge of them.
-
-					const resolvedDescriptions = shots.map((s) => {
-						const shotText = `${s.scene} ${s.action} ${s.description} ${s.dialog ?? ""}`;
-						const featured = Object.entries(linkSummaries).filter(([name]) =>
-							shotText.includes(`[[${name}]]`)
-						);
-
-						const sentences: string[] = [];
-
-						// 1. Character visual descriptions - who is in the frame.
-						if (featured.length > 0) {
-							sentences.push(featured.map(([, summary]) => summary).join(" "));
-						}
-
-						// 2. Action + visual description as natural prose (subject front-loaded).
-						sentences.push(`${stripLinks(s.action)} ${stripLinks(s.description)}`.trim());
-
-						// 3. Camera framing - after subject so FLUX weights subject first.
-						sentences.push(`Framing: ${normalizeDashes(stripLinks(s.camera))}.`);
-
-						// 4. Dialog display instruction.
-						if (s.dialog) {
-							sentences.push(`Display this spoken line as legible on-screen text: "${stripLinks(s.dialog)}"`);
-						}
-
-						return sentences.join(" ");
-					});
-
-					// 3. Always write prompt files into Prompts/
-					for (let i = 0; i < shots.length; i++) {
-						const promptVaultPath = normalizePath(`${promptsVaultPath}/${shotNames[i]}.md`);
-						const promptContent = buildShotPrompt(shots[i], linkSummaries, this.settings, shotNames[i], rendersVaultPath, sceneVaultPath);
-						const existing = this.app.vault.getAbstractFileByPath(promptVaultPath);
-						if (existing instanceof TFile) {
-							await this.app.vault.modify(existing, promptContent);
-						} else {
-							await this.app.vault.create(promptVaultPath, promptContent);
-						}
-					}
-
-					const outputAsImage = this.settings.storyboardOutputType === "image";
-
-					// 4. Note mode: write the gallery note up front
-					if (!outputAsImage) {
-						const noteContent = inlineTitle(this.app)
-							? buildGalleryNote(rendersVaultPath)
-							: `# ${sceneName} - Storyboard\n\n${buildGalleryNote(rendersVaultPath)}`;
-						const existingNote = this.app.vault.getAbstractFileByPath(storyboardNotePath);
-						let storyboardFile: TFile;
-						if (existingNote instanceof TFile) {
-							await this.app.vault.modify(existingNote, noteContent);
-							storyboardFile = existingNote;
-						} else {
-							storyboardFile = await this.app.vault.create(storyboardNotePath, noteContent);
-						}
-						await this.app.workspace.getLeaf(false).openFile(storyboardFile);
-					}
-
-					// 5. Generate images into temp dir, copy each to the Storyboard folder
-					log(`Starting image generation: ${shots.length} shot(s) via mflux (${this.settings.mfluxModel}).`);
-					const generatedImages = await generateStoryboardImages(
+					await this.runStoryboard(
 						shots,
-						tempDir,
-						this.settings,
-						vaultBasePath,
-						(msg, i, total) => notice.setMessage(`Slate: ${msg} (${i + 1}/${total})`),
-						async ({ filePath, shot }) => {
-							const idx = shots.findIndex((s) => s.number === shot.number);
-							await copyFile(filePath, join(rendersDiskPath, `${shotNames[idx]}.png`));
-						},
-						resolvedDescriptions
+						activeFile.parent?.path ?? "",
+						activeFile.parent?.name ?? activeFile.basename,
+						notice
 					);
+					notice.hide();
+					new Notice(`Slate: Storyboard ready: ${shots.length} shots.`);
+				} catch (err) {
+					notice.hide();
+					reportError(err);
+				}
+			},
+		});
 
-					// 6. Image mode: composite all shots into a single tiled PNG
-					if (outputAsImage) {
-						notice.setMessage("Slate: Compositing storyboard image…");
-						const imagePaths = generatedImages.map((_, i) =>
-							join(rendersDiskPath, `${shotNames[i]}.png`)
-						);
-						const columns = calculateColumns(
-							imagePaths.length,
-							this.settings.mfluxWidth,
-							this.settings.mfluxHeight,
-							this.settings.storyboardTilePadding,
-							this.settings.storyboardTileOrientation ?? "portrait"
-						);
-						const tileDiskPath = join(sceneDiskPath, "Storyboard.png");
-						await tileImages(
-							imagePaths,
-							tileDiskPath,
-							columns,
-							this.settings.storyboardTilePadding,
-							this.settings.storyboardTileBackground
-						);
-					}
+		// ── Command: Generate storyboard from script ─────────────────
+		// Both steps in one go: break the active script note down into shots, then
+		// render the storyboard from those shots without a detour through
+		// Breakdown.md. The breakdown note is still written and opened on the way.
+		this.addCommand({
+			id: "generate-storyboard-from-script",
+			name: "Generate storyboard from script",
+			callback: async () => {
+				const activeFile = this.app.workspace.getActiveFile();
+				if (!activeFile) {
+					new Notice("Slate: No active file.");
+					return;
+				}
+
+				const notice = new Notice("Slate: Generating shot breakdown…", 0);
+				try {
+					const { shots, breakdownFile, sceneVaultPath } =
+						await this.runShotBreakdown(activeFile, notice);
+					await this.app.workspace.getLeaf(false).openFile(breakdownFile);
+
+					notice.setMessage("Slate: Generating storyboard…");
+					await this.runStoryboard(shots, sceneVaultPath, activeFile.basename, notice);
 
 					notice.hide();
 					new Notice(`Slate: Storyboard ready: ${shots.length} shots.`);
 				} catch (err) {
 					notice.hide();
-					new Notice(`Slate error: ${err instanceof Error ? err.message : String(err)}`, 8000);
-					console.error("[Slate]", err);
-				} finally {
-					await rm(tempDir, { recursive: true, force: true });
+					reportError(err);
 				}
 			},
 		});
 	}
 
 	onunload() {}
+
+	/**
+	 * Break a script note into shots and write Breakdown.md into its scene folder.
+	 *
+	 * Returns the shots alongside the scene folder they belong to, so a caller can
+	 * carry straight on to the storyboard instead of re-parsing the markdown table.
+	 */
+	private async runShotBreakdown(
+		scriptFile: TFile,
+		notice: Notice
+	): Promise<{ shots: Shot[]; breakdownFile: TFile; sceneVaultPath: string }> {
+		const scriptText = (await this.app.vault.read(scriptFile)).trim();
+		if (!scriptText) {
+			throw new Error("The current note is empty.");
+		}
+
+		const chunks = splitScriptIntoChunks(scriptText, this.settings.breakdownChunkSize);
+		const wordCount = scriptText.split(/\s+/).length;
+		log(`${wordCount} words -> ${chunks.length} chunk(s) -> ${chunks.length} Ollama request(s).`);
+
+		let shots: Shot[] = [];
+		for (let c = 0; c < chunks.length; c++) {
+			const chunk = chunks[c];
+			const chunkWords = chunk.trim().split(/\s+/).length;
+			const chunkLabel = chunks.length > 1 ? ` (part ${c + 1}/${chunks.length})` : "";
+			log(`Chunk ${c + 1}/${chunks.length}: ${chunkWords} words, sending to Ollama (${this.settings.ollamaModel})…`);
+			const chunkShots = await generateShotBreakdown(
+				this.settings.ollamaHost,
+				this.settings.ollamaModel,
+				chunk,
+				this.settings.breakdownLanguage,
+				this.settings.breakdownCustomInstructions,
+				(msg) => notice.setMessage(`Slate: ${msg}${chunkLabel}`)
+			);
+			log(`Chunk ${c + 1}/${chunks.length}: ${chunkShots.length} shots returned.`);
+			shots.push(...chunkShots);
+		}
+
+		// Renumber shots sequentially across all chunks.
+		shots = shots.map((s, i) => ({ ...s, number: i + 1 }));
+		log(`Breakdown complete: ${shots.length} total shots.`);
+
+		// Output: {output folder}/{basename}/Breakdown.md
+		const baseName = scriptFile.basename;
+		const folder = resolveOutputFolder(scriptFile, this.settings.breakdownOutputFolder);
+		const sceneVaultPath = normalizePath(`${folder}/${baseName}`);
+		const breakdownVaultPath = normalizePath(`${sceneVaultPath}/Breakdown.md`);
+
+		await ensureVaultFolder(sceneVaultPath, this.app);
+
+		const table = buildMarkdownTable(shots);
+		const content = inlineTitle(this.app)
+			? table
+			: `# ${baseName} - Shot breakdown\n\n${table}`;
+
+		const existing = this.app.vault.getAbstractFileByPath(breakdownVaultPath);
+		let breakdownFile: TFile;
+		if (existing instanceof TFile) {
+			await this.app.vault.modify(existing, content);
+			breakdownFile = existing;
+		} else {
+			breakdownFile = await this.app.vault.create(breakdownVaultPath, content);
+		}
+
+		return { shots, breakdownFile, sceneVaultPath };
+	}
+
+	/**
+	 * Write the prompt files and render an image for every shot into the scene
+	 * folder, then either open the gallery note or composite the tiled PNG.
+	 */
+	private async runStoryboard(
+		shots: Shot[],
+		sceneVaultPath: string,
+		sceneName: string,
+		notice: Notice
+	): Promise<void> {
+		const storyboardFolderVaultPath = normalizePath(`${sceneVaultPath}/Storyboard`);
+		const rendersVaultPath = normalizePath(`${storyboardFolderVaultPath}/Renders`);
+		const promptsVaultPath = normalizePath(`${storyboardFolderVaultPath}/Prompts`);
+		const storyboardNotePath = normalizePath(`${sceneVaultPath}/Storyboard.md`);
+		const vaultBasePath = (this.app.vault.adapter as any).basePath as string;
+		const sceneDiskPath = join(vaultBasePath, sceneVaultPath);
+		const rendersDiskPath = join(vaultBasePath, rendersVaultPath);
+
+		await ensureVaultFolder(storyboardFolderVaultPath, this.app);
+		await ensureVaultFolder(rendersVaultPath, this.app);
+		await ensureVaultFolder(promptsVaultPath, this.app);
+
+		const tempDir = await mkdtemp(join(tmpdir(), "slate-"));
+
+		try {
+			// 1. Resolve wikilinks
+			notice.setMessage("Slate: Collecting links…");
+			const linkContents = await collectLinkContents(shots, this.app);
+			log(`Found ${linkContents.length} wikilink(s) to summarize.`);
+			notice.setMessage("Slate: Summarizing links…");
+			if (linkContents.length > 0) {
+				log(`Sending ${linkContents.length} link(s) to Ollama for summarization…`);
+			}
+			const linkSummaries = await summarizeLinks(
+				this.settings.ollamaHost,
+				this.settings.ollamaModel,
+				linkContents
+			);
+			log(`Link summarization done: ${Object.keys(linkSummaries).length} summary/summaries.`);
+
+			// 2. Build per-shot names and prompts
+			const shotNames = shots.map((s) =>
+				(this.settings.storyboardImageName || "Shot #").replace("#", String(s.number))
+			);
+
+			// Build natural-language prompts for FLUX's T5 encoder.
+			// Order: character appearances, subject+action, framing, dialog.
+			// FLUX weights earlier tokens more heavily, so subject comes first.
+			// Wikilinks are stripped - mflux has no knowledge of them.
+
+			const resolvedDescriptions = shots.map((s) => {
+				const shotText = `${s.scene} ${s.action} ${s.description} ${s.dialog ?? ""}`;
+				const featured = Object.entries(linkSummaries).filter(([name]) =>
+					shotText.includes(`[[${name}]]`)
+				);
+
+				const sentences: string[] = [];
+
+				// 1. Character visual descriptions - who is in the frame.
+				if (featured.length > 0) {
+					sentences.push(featured.map(([, summary]) => summary).join(" "));
+				}
+
+				// 2. Action + visual description as natural prose (subject front-loaded).
+				sentences.push(`${stripLinks(s.action)} ${stripLinks(s.description)}`.trim());
+
+				// 3. Camera framing - after subject so FLUX weights subject first.
+				sentences.push(`Framing: ${normalizeDashes(stripLinks(s.camera))}.`);
+
+				// 4. Dialog display instruction.
+				if (s.dialog) {
+					sentences.push(`Display this spoken line as legible on-screen text: "${stripLinks(s.dialog)}"`);
+				}
+
+				return sentences.join(" ");
+			});
+
+			// 3. Always write prompt files into Prompts/
+			for (let i = 0; i < shots.length; i++) {
+				const promptVaultPath = normalizePath(`${promptsVaultPath}/${shotNames[i]}.md`);
+				const promptContent = buildShotPrompt(shots[i], linkSummaries, this.settings, shotNames[i], rendersVaultPath, sceneVaultPath);
+				const existing = this.app.vault.getAbstractFileByPath(promptVaultPath);
+				if (existing instanceof TFile) {
+					await this.app.vault.modify(existing, promptContent);
+				} else {
+					await this.app.vault.create(promptVaultPath, promptContent);
+				}
+			}
+
+			const outputAsImage = this.settings.storyboardOutputType === "image";
+
+			// 4. Note mode: write the gallery note up front
+			if (!outputAsImage) {
+				const noteContent = inlineTitle(this.app)
+					? buildGalleryNote(rendersVaultPath)
+					: `# ${sceneName} - Storyboard\n\n${buildGalleryNote(rendersVaultPath)}`;
+				const existingNote = this.app.vault.getAbstractFileByPath(storyboardNotePath);
+				let storyboardFile: TFile;
+				if (existingNote instanceof TFile) {
+					await this.app.vault.modify(existingNote, noteContent);
+					storyboardFile = existingNote;
+				} else {
+					storyboardFile = await this.app.vault.create(storyboardNotePath, noteContent);
+				}
+				await this.app.workspace.getLeaf(false).openFile(storyboardFile);
+			}
+
+			// 5. Generate images into temp dir, copy each to the Storyboard folder
+			log(`Starting image generation: ${shots.length} shot(s) via mflux (${this.settings.mfluxModel}).`);
+			const generatedImages = await generateStoryboardImages(
+				shots,
+				tempDir,
+				this.settings,
+				vaultBasePath,
+				(msg, i, total) => notice.setMessage(`Slate: ${msg} (${i + 1}/${total})`),
+				async ({ filePath, shot }) => {
+					const idx = shots.findIndex((s) => s.number === shot.number);
+					await copyFile(filePath, join(rendersDiskPath, `${shotNames[idx]}.png`));
+				},
+				resolvedDescriptions
+			);
+
+			// 6. Image mode: composite all shots into a single tiled PNG
+			if (outputAsImage) {
+				notice.setMessage("Slate: Compositing storyboard image…");
+				const imagePaths = generatedImages.map((_, i) =>
+					join(rendersDiskPath, `${shotNames[i]}.png`)
+				);
+				const columns = calculateColumns(
+					imagePaths.length,
+					this.settings.mfluxWidth,
+					this.settings.mfluxHeight,
+					this.settings.storyboardTilePadding,
+					this.settings.storyboardTileOrientation ?? "portrait"
+				);
+				const tileDiskPath = join(sceneDiskPath, "Storyboard.png");
+				await tileImages(
+					imagePaths,
+					tileDiskPath,
+					columns,
+					this.settings.storyboardTilePadding,
+					this.settings.storyboardTileBackground
+				);
+			}
+		} finally {
+			await rm(tempDir, { recursive: true, force: true });
+		}
+	}
 
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -402,6 +456,12 @@ export default class SlatePlugin extends Plugin {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Surface a failure to the user and log the full error to the console. */
+function reportError(err: unknown): void {
+	new Notice(`Slate error: ${err instanceof Error ? err.message : String(err)}`, 8000);
+	console.error("[Slate]", err);
+}
 
 /**
  * Resolve the vault-relative parent folder for a new scene folder.
