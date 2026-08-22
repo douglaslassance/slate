@@ -1,20 +1,24 @@
 {
-  "ollamaHost": "http://localhost:11434",
-  "ollamaModel": "codestral:latest",
+  "ollamaHost": "",
   "breakdownLanguage": "English",
   "breakdownCustomInstructions": "Action style editing, shot density should be as high as it can be, with alternating action framing.",
   "breakdownOutputFolder": "",
   "breakdownChunkSize": 500,
   "mfluxExecutable": "",
   "storyboardImageName": "Shot #",
-  "mfluxStyleImagePath": "./Resources/References/Storyboard",
-  "mfluxPromptHeader": "Pencil and watercolor. Dynamic Ghibli anime style. No chibi characters, realistic proportions. Watercolor not going all the way to the edge of the frame.",
-  "mfluxModel": "flux2-klein-4b",
+  "mfluxStyleImagePath": "",
+  "mfluxPromptHeader": "StdGbRedmAF\n\nPencil and watercolor. Dynamic Ghibli anime style. No chibi characters, realistic proportions. Watercolor not going all the way to the edge of the frame.\n",
+  "mfluxModel": "flux2-klein-9b",
   "mfluxSteps": 12,
-  "mfluxWidth": 320,
-  "mfluxHeight": 180,
+  "mfluxWidth": 400,
+  "mfluxHeight": 225,
   "mfluxQuantize": 8,
-  "mfluxLoras": [],
+  "mfluxLoras": [
+    {
+      "path": "/Users/douglaslassance/Library/CloudStorage/ProtonDrive-hey@douglaslassance.me-folder/Libraries/LoRAs/[FLUX.2.Klein.9b]Stdgbredmaf_Redmond.safetensors",
+      "scale": 1
+    }
+  ],
   "storyboardOutputType": "image",
   "storyboardTileOrientation": "portrait",
   "storyboardTilePadding": 16,
