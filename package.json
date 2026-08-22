@@ -6,7 +6,11 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "node esbuild.config.mjs production",
-		"version": "node version-bump.mjs && git add manifest.json versions.json"
+		"version": "node version-bump.mjs && git add manifest.json versions.json",
+		"test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/*.test.ts\"",
+		"test:offline": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/chunking.test.ts",
+		"test:live": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/breakdown.test.ts",
+		"test:density": "SLATE_TEST_DENSITY=1 node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/density.test.ts"
 	},
 	"keywords": [],
 	"author": "Douglas Lassance",
@@ -17,7 +21,8 @@
 		"esbuild": "^0.21.0",
 		"obsidian": "latest",
 		"tslib": "^2.6.0",
-		"typescript": "^5.4.0"
+		"typescript": "^5.4.0",
+		"undici": "^8.10.0"
 	},
 	"dependencies": {
 		"jimp": "^1.6.1"
