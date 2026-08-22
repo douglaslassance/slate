@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { App, Notice, Plugin, TFile, normalizePath } from "obsidian";
 import { DEFAULT_SETTINGS, SlateSettings, SlateSettingTab } from "./settings";
-import { generateShotBreakdown, summarizeLinks, convertToFountain, splitScriptIntoChunks, Shot } from "./ollama";
+import { generateShotBreakdown, summarizeLinks, convertToFountain, splitScriptIntoChunks, MODEL, Shot } from "./ollama";
 import { generateStoryboardImages } from "./mflux";
 import { collectLinkContents } from "./vault";
 
@@ -64,7 +64,7 @@ export default class SlatePlugin extends Plugin {
 				try {
 					fountain = await convertToFountain(
 						this.settings.ollamaHost,
-						this.settings.ollamaModel,
+						MODEL,
 						scriptText,
 						(msg) => notice.setMessage(`Slate: ${msg}`)
 					);
@@ -119,7 +119,7 @@ export default class SlatePlugin extends Plugin {
 				notice.setMessage("Slate: Summarizing links…");
 				const linkSummaries = await summarizeLinks(
 					this.settings.ollamaHost,
-					this.settings.ollamaModel,
+					MODEL,
 					linkContents
 				);
 				notice.hide();
@@ -255,10 +255,10 @@ export default class SlatePlugin extends Plugin {
 			const chunk = chunks[c];
 			const chunkWords = chunk.trim().split(/\s+/).length;
 			const chunkLabel = chunks.length > 1 ? ` (part ${c + 1}/${chunks.length})` : "";
-			log(`Chunk ${c + 1}/${chunks.length}: ${chunkWords} words, sending to Ollama (${this.settings.ollamaModel})…`);
+			log(`Chunk ${c + 1}/${chunks.length}: ${chunkWords} words, sending to Ollama (${MODEL})…`);
 			const chunkShots = await generateShotBreakdown(
 				this.settings.ollamaHost,
-				this.settings.ollamaModel,
+				MODEL,
 				chunk,
 				this.settings.breakdownLanguage,
 				this.settings.breakdownCustomInstructions,
@@ -332,7 +332,7 @@ export default class SlatePlugin extends Plugin {
 			}
 			const linkSummaries = await summarizeLinks(
 				this.settings.ollamaHost,
-				this.settings.ollamaModel,
+				MODEL,
 				linkContents
 			);
 			log(`Link summarization done: ${Object.keys(linkSummaries).length} summary/summaries.`);
