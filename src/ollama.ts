@@ -65,13 +65,13 @@ REMINDER: every character name, location, or object that appeared as a [[wikilin
 Return ONLY the raw JSON array. No markdown fences, no commentary, no preamble.`;
 
 export const SUGGESTED_MODELS = [
-	"mistral:latest",
-	"codestral:latest",
-	"llama3.1:latest",
-	"llama3.2:latest",
+	"qwen2.5:32b",
+	"qwen2.5:14b",
 	"qwen2.5:latest",
+	"codestral:latest",
+	"mistral:latest",
+	"llama3.1:latest",
 	"gemma2:latest",
-	"phi4:latest",
 ];
 
 /**
