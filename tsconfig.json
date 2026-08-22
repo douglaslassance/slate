@@ -6,7 +6,6 @@
 		"module": "ESNext",
 		"target": "ES2018",
 		"allowSyntheticDefaultImports": true,
-		"outdir": ".",
 		"lib": ["ES2018", "DOM"],
 		"moduleResolution": "bundler"
 	},

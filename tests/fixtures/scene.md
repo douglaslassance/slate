@@ -1,0 +1,31 @@
+INT. [[Rialto Diner]] - NIGHT
+
+Rain hammers the windows. [[Keni]] sits alone in the corner booth, nursing cold coffee.
+
+The door swings open. [[Mara]] steps in, soaked, scanning the room.
+
+She spots him. She crosses the floor.
+
+MARA
+You said midnight.
+
+KENI
+I said if I could.
+
+Mara drops a manila envelope on the table. Coffee sloshes over the rim.
+
+Keni looks at the envelope. He does not touch it.
+
+KENI (CONT'D)
+Whose is it?
+
+Mara slides into the booth opposite him.
+
+MARA
+Does it matter?
+
+Keni opens the envelope. Inside, a brass key and a photograph.
+
+He turns the photograph over. A date is written on the back.
+
+His jaw tightens.
