@@ -37,6 +37,14 @@ SPLIT AGGRESSIVELY. Every single one of the following is its own shot:
 - Any moment where the camera would naturally cut in a professionally edited film.
 Do NOT merge two or more of these into one shot object. If in doubt, split.
 
+DIALOGUE GOES IN THE DIALOG FIELD, NEVER IN THE ACTION FIELD.
+When a character speaks during a shot, the spoken line belongs in "dialog" and nowhere else.
+The "action" field describes what the speaker is physically doing while the line is delivered.
+  BAD (forbidden): "action": "MARA: You said midnight.", "dialog": ""
+  GOOD: "action": "[[Mara]] stares across the table as she speaks.", "dialog": "[[Mara]]: You said midnight."
+Never write a speaker name followed by a colon in the "action" field.
+Never leave "dialog" empty on a shot where somebody speaks.
+
 STEP 3: WRITE RICH DESCRIPTIONS for each shot.
 - "action": one clear sentence describing exactly what is happening narratively in THIS shot only.
 - "description": paint the frame. Include specific lighting quality and direction, color palette, depth of field, textures, wardrobe details, props in frame, background activity, spatial relationships between subjects. Be concrete and visual. Do NOT restate the action or camera info here.
@@ -57,9 +65,9 @@ Each object must have exactly these keys:
   number      (integer, sequential across the whole script, starting from 1)
   scene       (string, scene heading, preserve any [[wikilinks]])
   camera      (string, shot type and camera movement in full words as described above)
-  action      (string, one sentence describing what is happening in this specific shot, preserve any [[wikilinks]])
+  action      (string, one sentence of narrative prose describing what is happening in this specific shot, never a quoted line and never prefixed with a speaker name and colon, preserve any [[wikilinks]])
   description (string, rich visual frame description covering lighting, color, texture, wardrobe, props, depth, atmosphere, do NOT repeat camera or action, preserve any [[wikilinks]])
-  dialog      (string, speaker name followed by a colon and their spoken lines, e.g. "[[Keni]]: Hey, can you get me a Coke?", include whenever anyone speaks even a single word, omit only when the shot is completely silent, preserve any [[wikilinks]])
+  dialog      (string, speaker name followed by a colon and their spoken lines, e.g. "[[Keni]]: Hey, can you get me a Coke?", REQUIRED whenever anyone speaks even a single word, leave as an empty string only when the shot is completely silent, preserve any [[wikilinks]])
 
 REMINDER: every character name, location, or object that appeared as a [[wikilink]] in the source must remain a [[wikilink]] in your output.
 Return ONLY the raw JSON array. No markdown fences, no commentary, no preamble.`;
