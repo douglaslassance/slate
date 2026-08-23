@@ -3,7 +3,7 @@ import { tileImages, calculateColumns } from "./tile";
 import { tmpdir } from "os";
 import { join } from "path";
 import { App, Notice, Plugin, TFile, normalizePath } from "obsidian";
-import { DEFAULT_SETTINGS, SlateSettings, SlateSettingTab } from "./settings";
+import { DEFAULT_SETTINGS, SlateSettings, SlateSettingTab, resolveOllamaHost } from "./settings";
 import { generateShotBreakdown, summarizeLinks, convertToFountain, splitScriptIntoChunks, MODEL, Shot } from "./ollama";
 import { generateStoryboardImages } from "./mflux";
 import { collectLinkContents } from "./vault";
@@ -12,6 +12,11 @@ const log = (...args: unknown[]) => console.log("[Slate]", ...args);
 
 export default class SlatePlugin extends Plugin {
 	settings: SlateSettings;
+
+	/** Ollama host to talk to, defaulting when the setting is blank. */
+	private get ollamaHost(): string {
+		return resolveOllamaHost(this.settings.ollamaHost);
+	}
 
 	async onload() {
 		await this.loadSettings();
@@ -63,7 +68,7 @@ export default class SlatePlugin extends Plugin {
 				let fountain: string;
 				try {
 					fountain = await convertToFountain(
-						this.settings.ollamaHost,
+						this.ollamaHost,
 						MODEL,
 						scriptText,
 						(msg) => notice.setMessage(`Slate: ${msg}`)
@@ -118,7 +123,7 @@ export default class SlatePlugin extends Plugin {
 				const linkContents = await collectLinkContents(shots, this.app);
 				notice.setMessage("Slate: Summarizing links…");
 				const linkSummaries = await summarizeLinks(
-					this.settings.ollamaHost,
+					this.ollamaHost,
 					MODEL,
 					linkContents
 				);
@@ -257,7 +262,7 @@ export default class SlatePlugin extends Plugin {
 			const chunkLabel = chunks.length > 1 ? ` (part ${c + 1}/${chunks.length})` : "";
 			log(`Chunk ${c + 1}/${chunks.length}: ${chunkWords} words, sending to Ollama (${MODEL})…`);
 			const chunkShots = await generateShotBreakdown(
-				this.settings.ollamaHost,
+				this.ollamaHost,
 				MODEL,
 				chunk,
 				this.settings.breakdownLanguage,
@@ -331,7 +336,7 @@ export default class SlatePlugin extends Plugin {
 				log(`Sending ${linkContents.length} link(s) to Ollama for summarization…`);
 			}
 			const linkSummaries = await summarizeLinks(
-				this.settings.ollamaHost,
+				this.ollamaHost,
 				MODEL,
 				linkContents
 			);
