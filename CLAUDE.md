@@ -75,7 +75,12 @@ so there is no test framework dependency and no build step.
 - `tests/chunking.test.ts` is offline and always runs.
 - `tests/breakdown.test.ts` calls the real model and skips when Ollama is
   unreachable or the model is not pulled.
-- `tests/density.test.ts` is the slow benchmark behind `SLATE_TEST_DENSITY=1`.
+- `tests/lora.test.ts` is offline and always runs.
+- `tests/density.test.ts` is not a routine test. It is a 25 to 45 minute
+  experiment behind `SLATE_TEST_DENSITY=1`, run when changing model or
+  revisiting chunking, not as part of a normal pass. Its current answer is
+  recorded above, so re-running it only makes sense when that answer is in
+  doubt.
 
 Any model change should be validated with `SLATE_TEST_MODEL=<model> npm run
 test:live` before it becomes the default.

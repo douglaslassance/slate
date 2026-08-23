@@ -31,7 +31,7 @@ export const DEFAULT_SETTINGS: SlateSettings = {
 	breakdownLanguage: "",
 	breakdownCustomInstructions: "",
 	breakdownOutputFolder: "",
-	breakdownChunkSize: 750,
+	breakdownChunkSize: 500,
 
 	mfluxExecutable: "",
 	storyboardImageName: "Shot #",
