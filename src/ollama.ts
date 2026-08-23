@@ -169,12 +169,11 @@ export function estimatePageCount(text: string): number {
 // Scene headings in Fountain format (INT./EXT.) and markdown heading format (## INT. / ## EXT.).
 const SCENE_HEADING_RE = /^(#{1,3}\s*)?\**(INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s/i;
 
-// Maximum shots we trust the model to produce cleanly in a single call.
-const SAFE_MAX_SHOTS_PER_CALL = 35;
-
 /**
- * Split a script into chunks at scene boundaries so each chunk targets
- * at most SAFE_MAX_SHOTS_PER_CALL shots.
+ * Split a script into chunks at scene boundaries, each capped at
+ * maxWordsPerChunk words. A boundary only ever lands on a scene heading, so no
+ * scene is ever cut in half. Smaller chunks make the model split more
+ * aggressively, which is measured by tests/density.test.ts.
  */
 export function splitScriptIntoChunks(text: string, maxWordsPerChunk = 750): string[] {
 	const lines = text.split("\n");

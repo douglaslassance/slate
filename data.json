@@ -22,9 +22,5 @@
   "storyboardOutputType": "image",
   "storyboardTileOrientation": "portrait",
   "storyboardTilePadding": 16,
-  "storyboardTileBackground": "#ffffff",
-  "breakdownShotsPerPage": 5,
-  "storyboardTileColumns": 2,
-  "storyboardDeleteIndividualImages": false,
-  "outputFolder": "Storyboards"
+  "storyboardTileBackground": "#ffffff"
 }
