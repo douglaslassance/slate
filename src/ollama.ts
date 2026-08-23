@@ -202,6 +202,75 @@ export function splitScriptIntoChunks(text: string, maxWordsPerChunk = 750): str
 	return chunks;
 }
 
+/**
+ * Every shot object carries exactly one "camera" key, so counting it in the
+ * stream gives a live shot count without parsing partial JSON.
+ */
+const SHOT_MARKER = '"camera"';
+
+/**
+ * Read a streamed /api/chat response, reporting shots as they appear, and
+ * return the full concatenated content.
+ *
+ * Ollama streams newline delimited JSON, one object per token batch. Reading it
+ * incrementally means the caller sees progress during a long generation, and
+ * the connection never sits idle long enough for a client timeout to fire.
+ */
+async function readShotStream(
+	response: Response,
+	onProgress?: (message: string) => void
+): Promise<string> {
+	const reader = response.body?.getReader();
+
+	// No readable body (some environments buffer the whole response): fall back
+	// to reading it in one go.
+	if (!reader) {
+		const data = await response.json();
+		return data?.message?.content ?? "";
+	}
+
+	const decoder = new TextDecoder();
+	let content = "";
+	let buffer = "";
+	let shots = 0;
+	// Enough tail to catch a marker split across two chunks.
+	let carry = "";
+
+	onProgress?.("Generating shots…");
+
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		buffer += decoder.decode(value, { stream: true });
+		const lines = buffer.split("\n");
+		buffer = lines.pop() ?? "";
+
+		for (const line of lines) {
+			if (!line.trim()) continue;
+			let piece: string;
+			try {
+				piece = JSON.parse(line)?.message?.content ?? "";
+			} catch {
+				continue;
+			}
+			if (!piece) continue;
+			content += piece;
+
+			const window = carry + piece;
+			const before = shots;
+			for (let i = window.indexOf(SHOT_MARKER); i !== -1; i = window.indexOf(SHOT_MARKER, i + SHOT_MARKER.length)) {
+				shots++;
+			}
+			carry = window.slice(-(SHOT_MARKER.length - 1));
+			// Only on change: the stream delivers thousands of token batches and
+			// each report repaints the notice.
+			if (shots !== before) onProgress?.(`Generating shots… ${shots} so far`);
+		}
+	}
+
+	return content;
+}
+
 export async function generateShotBreakdown(
 	host: string,
 	model: string,
@@ -231,7 +300,9 @@ JSON keys ("number", "scene", "camera", "action", "description", "dialog") stay 
 
 	const body = JSON.stringify({
 		model,
-		stream: false,
+		// Streamed so the notice can report progress during a generation that
+		// runs for minutes, and so no timeout fires while the model thinks.
+		stream: true,
 		messages: [
 			{ role: "system", content: systemPrompt },
 			{ role: "user", content: scriptText },
@@ -262,10 +333,9 @@ JSON keys ("number", "scene", "camera", "action", "description", "dialog") stay 
 		throw new Error(`Ollama error ${response.status}: ${text}`);
 	}
 
-	onProgress?.("Parsing shot breakdown…");
+	const content = await readShotStream(response, onProgress);
 
-	const data = await response.json();
-	const content: string = data?.message?.content ?? "";
+	onProgress?.("Parsing shot breakdown…");
 
 	// Strip optional markdown code fences the model might add anyway.
 	// Replace curly/smart quotes — models emit these inside string values breaking JSON.parse.
