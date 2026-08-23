@@ -57,22 +57,56 @@ async function resolveStyleImages(stylePath: string, vaultBasePath: string): Pro
 	return [];
 }
 
+/** Weight file suffixes. A reference ending in one of these names a file, not a Hub repo. */
+const WEIGHT_EXTENSIONS = [".safetensors", ".bin", ".pt", ".ckpt"];
+
 /**
- * Resolve LoRA paths against the vault root and return parallel paths/scales arrays
- * ready to pass to the mflux CLI.
+ * Resolve a single LoRA reference into something the mflux CLI understands.
+ *
+ * `--lora-paths` accepts three forms: local files, Hugging Face repos
+ * (`org/model`), and the collection form (`org/model:file.safetensors`). Hub
+ * repos are downloaded on first use, so a reference beats a local path for
+ * anything published.
+ *
+ * The forms are told apart by shape rather than by looking for a dot, because
+ * Hub repo names contain dots all the time (artificialguybr/StudioGhibli.Redmond)
+ * and the collection form always does.
+ */
+export function resolveLoraReference(reference: string, vaultBasePath: string): string {
+	const ref = reference.trim();
+
+	// Absolute local path.
+	if (ref.startsWith("/")) return ref;
+
+	// Already a URL. mflux may reject it, but a clear error beats mangling it
+	// into a vault path that cannot exist.
+	if (/^https?:\/\//.test(ref)) return ref;
+
+	// Hugging Face collection form: org/model:file.safetensors.
+	if (ref.includes(":")) return ref;
+
+	// Names a weight file, so it is a local path relative to the vault root.
+	if (WEIGHT_EXTENSIONS.some((ext) => ref.toLowerCase().endsWith(ext))) {
+		return join(vaultBasePath, ref);
+	}
+
+	// Hugging Face repo ID: exactly one slash and no file suffix.
+	if (/^[^/\s]+\/[^/\s]+$/.test(ref)) return ref;
+
+	// Anything else is a vault relative path.
+	return join(vaultBasePath, ref);
+}
+
+/**
+ * Resolve every configured LoRA and return parallel paths/scales arrays ready
+ * to pass to the mflux CLI.
  */
 function resolveLoraArgs(settings: SlateSettings, vaultBasePath: string): { paths: string[]; scales: number[] } {
 	const entries = settings.mfluxLoras.filter((l) => l.path.trim());
-	const paths = entries.map((l) => {
-		// Absolute path: pass through as-is.
-		if (l.path.startsWith("/")) return l.path;
-		// Hugging Face repo ID (e.g. "username/my-lora"): pass through as-is.
-		if (/^[^/]+\/[^/]+$/.test(l.path) && !l.path.includes(".")) return l.path;
-		// Relative local path: resolve against vault root.
-		return join(vaultBasePath, l.path);
-	});
-	const scales = entries.map((l) => l.scale);
-	return { paths, scales };
+	return {
+		paths: entries.map((l) => resolveLoraReference(l.path, vaultBasePath)),
+		scales: entries.map((l) => l.scale),
+	};
 }
 
 /**
