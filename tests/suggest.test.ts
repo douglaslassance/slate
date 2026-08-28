@@ -9,10 +9,28 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseFountain } from "../src/fountain.ts";
-import { buildVocabulary, rankByQuery } from "../src/fountain-entities.ts";
+import { buildVocabulary, DEFAULT_TIMES, rankByQuery } from "../src/fountain-entities.ts";
 import { fixture } from "./helpers.ts";
 
 const vocab = (src: string) => buildVocabulary(parseFountain(src));
+
+test("the built-in times are offered even in an empty script", () => {
+	// A page with no scene headings yet still needs somewhere to start.
+	assert.deepEqual(vocab("Rain falls.").times, DEFAULT_TIMES);
+});
+
+test("the script's own words come before the built-in ones", () => {
+	// A French script leads with its own vocabulary rather than burying it
+	// under a list it will never use.
+	const times = vocab("INT. TOILETTES - JOUR\n\nUn beat.").times;
+	assert.equal(times[0], "JOUR");
+	assert.ok(times.includes("CONTINUOUS"), "the built-ins were dropped");
+});
+
+test("a built-in the script already uses is not offered twice", () => {
+	const times = vocab("INT. BANK - DAY\n\nA beat.").times;
+	assert.deepEqual(times.filter((t) => t === "DAY"), ["DAY"]);
+});
 
 test("times of day are learned from the script, in any language", () => {
 	const src = [
@@ -28,22 +46,22 @@ test("times of day are learned from the script, in any language", () => {
 		"",
 		"Un beat.",
 	].join("\n");
-	assert.deepEqual(vocab(src).times, ["JOUR", "NUIT", "CONTINU"]);
+	assert.deepEqual(vocab(src).times.slice(0, 3), ["JOUR", "NUIT", "CONTINU"]);
 });
 
 test("a time of day is listed once however often it is used", () => {
 	const src = "INT. A - DAY\n\nBeat.\n\nEXT. B - DAY\n\nBeat.";
-	assert.deepEqual(vocab(src).times, ["DAY"]);
+	assert.deepEqual(vocab(src).times.filter((t) => t === "DAY"), ["DAY"]);
 });
 
 test("a scene number does not leak into the time of day", () => {
 	const src = "INT. DINER - NIGHT #12A#\n\nBeat.";
-	assert.deepEqual(vocab(src).times, ["NIGHT"]);
+	assert.equal(vocab(src).times[0], "NIGHT");
 });
 
 test("a heading with no time of day contributes none", () => {
 	const src = "INT. DINER\n\nBeat.";
-	assert.deepEqual(vocab(src).times, []);
+	assert.deepEqual(vocab(src).times, DEFAULT_TIMES);
 });
 
 test("locations and characters come through for completion", () => {
@@ -78,7 +96,7 @@ test("the fixture yields its own vocabulary", () => {
 	const v = vocab(fixture("scene.md"));
 	assert.deepEqual(v.characters, ["MARA", "KENI"]);
 	assert.deepEqual(v.locations, ["Rialto Diner"]);
-	assert.deepEqual(v.times, ["NIGHT"]);
+	assert.equal(v.times[0], "NIGHT");
 });
 
 // ── Classement des suggestions ──────────────────────────────────────────────

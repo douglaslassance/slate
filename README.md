@@ -53,6 +53,11 @@ The parse also yields the cast and location rosters straight from the script,
 since character cues and scene headings are structural elements rather than
 guesses. That is what entity resolution matches vault notes against.
 
+Times of day fall back to a built-in list, the same one Slugline offers, so a
+page with no scene headings yet still has somewhere to start. The script's own
+words come first, which is what keeps a script written in another language
+leading with its own vocabulary rather than an English list it will never use.
+
 If another plugin already claims `.fountain`, Slate leaves it alone and only
 skips the file association.
 
