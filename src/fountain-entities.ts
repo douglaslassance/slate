@@ -181,8 +181,28 @@ export function findMentions(script: Script, names: string[]): Mention[] {
 	return mentions;
 }
 
-/** The spec's scene heading prefixes. The only fixed vocabulary in a script. */
+/** The spec's scene heading prefixes. */
 export const SCENE_PREFIXES = ["INT.", "EXT.", "EST.", "INT./EXT.", "I/E."];
+
+/**
+ * Times of day offered before a script has established its own.
+ *
+ * Taken from what Slugline suggests, so the two agree. The spec says nothing
+ * about the time slot, so this is convention rather than syntax, and it is
+ * necessarily in English: a script written in another language builds its own
+ * vocabulary as it goes, which is why these are appended after whatever the
+ * script already uses rather than offered instead of it.
+ */
+export const DEFAULT_TIMES = [
+	"DAY",
+	"NIGHT",
+	"MORNING",
+	"AFTERNOON",
+	"EVENING",
+	"LATER",
+	"MOMENTS LATER",
+	"CONTINUOUS",
+];
 
 /** The time of day in a scene heading, which follows the last " - ". */
 function headingTime(text: string): string | null {
@@ -229,6 +249,11 @@ export function buildVocabulary(script: Script): Vocabulary {
 			if (text) remember(transitions, text);
 		}
 	}
+
+	// The script's own words come first, then the defaults it has not used.
+	// A French script therefore leads with JOUR and CONTINU, and still offers
+	// something useful on a page that has no scene headings yet.
+	for (const time of DEFAULT_TIMES) remember(times, time);
 
 	return {
 		characters: extractRoster(script),
