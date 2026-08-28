@@ -6,8 +6,15 @@
 		"module": "ESNext",
 		"target": "ES2018",
 		"allowSyntheticDefaultImports": true,
-		"lib": ["ES2018", "DOM"],
-		"moduleResolution": "bundler"
+		"lib": [
+			"ES2018",
+			"DOM"
+		],
+		"moduleResolution": "bundler",
+		"noEmit": true,
+		"allowImportingTsExtensions": true
 	},
-	"include": ["src/**/*.ts"]
+	"include": [
+		"src/**/*.ts"
+	]
 }
