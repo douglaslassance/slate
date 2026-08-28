@@ -2,6 +2,9 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import type SlatePlugin from "./main";
 
 export interface SlateSettings {
+	// ── Fountain ───────────────────────────────────────────────────────────────
+	formatFountainOnSave: boolean;
+
 	// ── Shot Breakdown ─────────────────────────────────────────────────────────
 	ollamaHost: string;
 	breakdownLanguage: string;
@@ -27,6 +30,8 @@ export interface SlateSettings {
 }
 
 export const DEFAULT_SETTINGS: SlateSettings = {
+	formatFountainOnSave: false,
+
 	ollamaHost: "http://localhost:11434",
 	breakdownLanguage: "",
 	breakdownCustomInstructions: "",
@@ -73,6 +78,23 @@ export class SlateSettingTab extends PluginSettingTab {
 			s.controlEl.style.width = "100%";
 			return s;
 		};
+
+		// ── Fountain ────────────────────────────────────────────────────────────
+		containerEl.createEl("h2", { text: "Fountain integration" });
+
+		new Setting(containerEl)
+			.setName("Format on save")
+			.setDesc(
+				"Run \"Format Fountain\" when you save a .fountain file with Cmd/Ctrl+S. Obsidian's automatic background saves do not trigger it, because they do not go through the save command. Off by default, since formatting rewrites the file under your cursor."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.formatFountainOnSave)
+					.onChange(async (value) => {
+						this.plugin.settings.formatFountainOnSave = value;
+						await this.plugin.saveSettings();
+					})
+			);
 
 		// ── Shot Breakdown ──────────────────────────────────────────────────────
 		containerEl.createEl("h2", { text: "Shot breakdown" });

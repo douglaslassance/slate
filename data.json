@@ -1,4 +1,5 @@
 {
+  "formatFountainOnSave": true,
   "ollamaHost": "",
   "breakdownLanguage": "English",
   "breakdownCustomInstructions": "Action style editing, shot density should be as high as it can be, with alternating action framing.",
