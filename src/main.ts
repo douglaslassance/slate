@@ -8,7 +8,7 @@ import { generateShotBreakdown, summarizeLinks, convertToFountain, splitScriptIn
 import { generateStoryboardImages } from "./mflux";
 import { collectLinkContents } from "./vault";
 import { fountainEditorExtension, FOUNTAIN_EXTENSION } from "./fountain-editor";
-import { formatFountain } from "./fountain-format";
+import { formatFountain, minimalEdit } from "./fountain-format";
 import { fountainReadingProcessor } from "./fountain-reading";
 import { FountainSuggest } from "./fountain-suggest";
 
@@ -668,25 +668,23 @@ export default class SlatePlugin extends Plugin {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Format an open editor in place, preserving cursor and scroll.
+ * Format an open editor in place.
+ *
+ * The formatted text is applied as the smallest edit that produces it, rather
+ * than by replacing the whole document. Replacing everything rebuilds the
+ * editor, which drops the scroll position and the undo history and makes the
+ * view jump to somewhere unrelated. A narrow edit is mapped through by the
+ * editor itself, so the cursor and viewport need no restoring at all.
  *
  * Shared by the command and the save hook, which differ only in how they find
  * the file, not in what they do to it.
  */
 function formatInEditor(editor: Editor): boolean {
 	const source = editor.getValue();
-	const formatted = formatFountain(source);
-	if (formatted === source) return false;
+	const edit = minimalEdit(source, formatFountain(source));
+	if (!edit) return false;
 
-	const cursor = editor.getCursor();
-	const scroll = editor.getScrollInfo();
-	editor.setValue(formatted);
-	// Formatting can shorten the document, so the old cursor may now be past
-	// the end of it.
-	const lastLine = editor.lastLine();
-	const line = Math.min(cursor.line, lastLine);
-	editor.setCursor({ line, ch: Math.min(cursor.ch, editor.getLine(line).length) });
-	editor.scrollTo(scroll.left, scroll.top);
+	editor.replaceRange(edit.text, editor.offsetToPos(edit.from), editor.offsetToPos(edit.to));
 	return true;
 }
 
