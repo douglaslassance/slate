@@ -1,0 +1,231 @@
+/*
+ * Fountain screenplay formatting.
+ *
+ * Two surfaces share these rules. The editor (source and live preview) gets
+ * one class per line from src/fountain-editor.ts, on CodeMirror's own line
+ * elements. Reading mode gets a rebuilt block from src/fountain-reading.ts,
+ * where the same classes sit on plain divs inside .slate-fountain-render.
+ * Every element selector therefore lists both forms.
+ *
+ * Indents follow the standard US Letter screenplay layout, in ch units so they
+ * hold at any font size. Colours come from Obsidian variables so both themes
+ * work without a second set of rules.
+ */
+
+.markdown-source-view.mod-cm6 .cm-line[class*="slate-fountain-"],
+.slate-fountain-render {
+	font-family: "Courier Prime", "Courier New", var(--font-monospace), monospace;
+	line-height: 1.5;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-scene-heading,
+.slate-fountain-render .slate-fountain-scene-heading {
+	font-weight: 700;
+	text-transform: uppercase;
+	margin-top: 1.5em;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-action,
+.slate-fountain-render .slate-fountain-action {
+	margin-top: 0.5em;
+}
+
+/*
+ * The dialogue column.
+ *
+ * A printed screenplay puts dialogue in a fixed measure indented from the left
+ * margin, with the character cue indented further so it sits over that block.
+ * Those are the real layout numbers, not an approximation of centring.
+ *
+ * Padding rather than margin, and fixed indents rather than text-align centre,
+ * because a CodeMirror line box spans the whole editor width and ignores
+ * max-width. Centring inside it therefore centres across the editor, not over
+ * the dialogue, which is what put the cue out on its own.
+ */
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-character,
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-character-dual,
+.slate-fountain-render .slate-fountain-character,
+.slate-fountain-render .slate-fountain-character-dual {
+	padding-left: 20ch;
+	margin-top: 1em;
+	text-transform: uppercase;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-character-dual,
+.slate-fountain-render .slate-fountain-character-dual {
+	color: var(--text-accent);
+}
+
+/* Parentheticals sit between the cue and the dialogue. */
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-parenthetical,
+.slate-fountain-render .slate-fountain-parenthetical {
+	padding-left: 15ch;
+	padding-right: 20ch;
+	color: var(--text-muted);
+}
+
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-dialogue,
+.slate-fountain-render .slate-fountain-dialogue {
+	padding-left: 10ch;
+	padding-right: 15ch;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-lyrics,
+.slate-fountain-render .slate-fountain-lyrics {
+	padding-left: 10ch;
+	padding-right: 15ch;
+	font-style: italic;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-transition,
+.slate-fountain-render .slate-fountain-transition {
+	text-align: right;
+	text-transform: uppercase;
+	margin-top: 1em;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-centered,
+.slate-fountain-render .slate-fountain-centered {
+	text-align: center;
+	margin-top: 1em;
+}
+
+/* Structure. Sections and synopses never print, so they read as metadata. */
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-section,
+.slate-fountain-render .slate-fountain-section {
+	font-weight: 700;
+	color: var(--text-accent);
+	margin-top: 1.5em;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-synopsis,
+.slate-fountain-render .slate-fountain-synopsis {
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-page-break,
+.slate-fountain-render .slate-fountain-page-break {
+	color: var(--text-faint);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* Notes are annotations that the spec drops from output, so dim them. */
+.slate-fountain-note {
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+/* Inline emphasis. Markers stay visible, which is the plain-text bargain. */
+.slate-fountain-bold {
+	font-weight: 700;
+}
+
+.slate-fountain-italic {
+	font-style: italic;
+}
+
+.slate-fountain-bold-italic {
+	font-weight: 700;
+	font-style: italic;
+}
+
+.slate-fountain-underline {
+	text-decoration: underline;
+}
+
+/*
+ * Resolved character and location names.
+ *
+ * The script on disk holds no brackets, so this styling is the only sign a
+ * name has a note behind it. In the editor, Cmd or Ctrl click follows it. In
+ * reading mode these are real internal links, so Obsidian handles them.
+ */
+.markdown-source-view.mod-cm6 .cm-line .slate-fountain-entity {
+	color: var(--link-color);
+	text-decoration: underline;
+	text-decoration-style: dotted;
+	text-underline-offset: 2px;
+	cursor: var(--cursor-link, pointer);
+}
+
+.markdown-source-view.mod-cm6 .cm-line .slate-fountain-entity:hover {
+	color: var(--link-color-hover);
+	text-decoration-style: solid;
+}
+
+/* Autocomplete rows, with the kind of thing being offered on the right. */
+.slate-fountain-suggestion {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 1em;
+}
+
+.slate-fountain-suggestion-kind {
+	color: var(--text-faint);
+	font-size: var(--font-smaller);
+	flex-shrink: 0;
+}
+
+/*
+ * Cancel the blockquote treatment on Fountain's ">" lines.
+ *
+ * Fountain uses a leading ">" for centered text and forced transitions.
+ * Obsidian reads the same character as markdown blockquote and decorates the
+ * line: a border drawn as a :before, an inline border element in source mode,
+ * plus a background and italic slant. None of that belongs on a screenplay.
+ *
+ * The selectors carry the .markdown-source-view prefix deliberately, to
+ * outrank Obsidian's own rule, which is specific enough that a bare .cm-line
+ * selector loses to it.
+ */
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-centered::before,
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-transition::before {
+	display: none;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-centered .cm-blockquote-border,
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-transition .cm-blockquote-border {
+	display: none;
+}
+
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-centered,
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-transition {
+	background-color: transparent;
+	font-style: normal;
+}
+
+/* Reading mode renders its own markup, so only the blockquote wrapper remains. */
+.slate-fountain-render blockquote {
+	border: none;
+	background: none;
+	margin: 0;
+	padding: 0;
+}
+
+/*
+ * The title page.
+ *
+ * Not an element, so it carries no kind of its own, but it is still part of
+ * the script and should not be the one block left in the theme's font.
+ */
+.markdown-source-view.mod-cm6 .cm-line.slate-fountain-title-page {
+	font-family: "Courier Prime", "Courier New", var(--font-monospace), monospace;
+	line-height: 1.5;
+	color: var(--text-muted);
+}
+
+/*
+ * Obsidian's inline title, which is the file name shown above the script.
+ *
+ * Matched with :has() rather than a class added from JavaScript: a view that
+ * contains a Fountain-decorated line is a screenplay, and nothing else needs
+ * to be tracked to know it.
+ */
+.markdown-source-view:has(.cm-line[class*="slate-fountain-"]) .inline-title,
+.markdown-preview-view:has(.slate-fountain-render) .inline-title {
+	font-family: "Courier Prime", "Courier New", var(--font-monospace), monospace;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
