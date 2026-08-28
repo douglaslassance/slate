@@ -165,3 +165,43 @@ export function formatFountain(source: string): string {
 	// Exactly one trailing newline.
 	return `${out.join("\n").replace(/\n+$/, "")}\n`;
 }
+
+/** A single replacement, as character offsets into the original text. */
+export interface Edit {
+	from: number;
+	to: number;
+	text: string;
+}
+
+/**
+ * The smallest single replacement that turns `before` into `after`.
+ *
+ * Formatting a whole document and writing it back with setValue tears the
+ * editor down and rebuilds it, which loses the scroll position, the selection,
+ * and the undo history, and makes the view jump. Narrowing the change to the
+ * span that actually differs lets the editor apply it as an ordinary edit and
+ * map the cursor through it, so nothing moves that did not have to.
+ *
+ * The common prefix and suffix are trimmed at character level, which is enough
+ * because the formatter's edits cluster: a save after typing in one scene
+ * touches that scene and nothing else.
+ *
+ * Returns null when the two texts are identical.
+ */
+export function minimalEdit(before: string, after: string): Edit | null {
+	if (before === after) return null;
+
+	let start = 0;
+	const shortest = Math.min(before.length, after.length);
+	while (start < shortest && before[start] === after[start]) start++;
+
+	// Walk the tails back, never crossing the prefix already matched.
+	let endBefore = before.length;
+	let endAfter = after.length;
+	while (endBefore > start && endAfter > start && before[endBefore - 1] === after[endAfter - 1]) {
+		endBefore--;
+		endAfter--;
+	}
+
+	return { from: start, to: endBefore, text: after.slice(start, endAfter) };
+}

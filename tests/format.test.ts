@@ -9,7 +9,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatFountain } from "../src/fountain-format.ts";
+import { formatFountain, minimalEdit } from "../src/fountain-format.ts";
 import { parseFountain } from "../src/fountain.ts";
 import { fixture } from "./helpers.ts";
 
@@ -125,4 +125,75 @@ test("formatting never changes what the elements are", () => {
 test("the file ends with exactly one newline", () => {
 	assert.ok(formatFountain("Rain falls.").endsWith(".\n"));
 	assert.ok(formatFountain("Rain falls.\n\n\n").endsWith(".\n"));
+});
+
+// ── Application du résultat dans l'éditeur ──────────────────────────────────
+
+/** Apply an edit the way the editor would, to prove it reconstructs the text. */
+const apply = (before: string, edit: { from: number; to: number; text: string }) =>
+	before.slice(0, edit.from) + edit.text + before.slice(edit.to);
+
+test("identical texts produce no edit at all", () => {
+	assert.equal(minimalEdit("INT. DINER - NIGHT\n", "INT. DINER - NIGHT\n"), null);
+});
+
+test("an edit reconstructs the formatted text exactly", () => {
+	const before = "int. diner -- night\n\n\nMara waits.   \n";
+	const after = formatFountain(before);
+	const edit = minimalEdit(before, after);
+	assert.ok(edit);
+	assert.equal(apply(before, edit), after);
+});
+
+test("the edit spans only what actually differs", () => {
+	// The point of the exercise: an untouched head and tail stay untouched, so
+	// the editor never has to rebuild them and the view does not jump.
+	const before = "INT. DINER - NIGHT\n\nRain falls.\n\n\n\nHe waits.\n";
+	const edit = minimalEdit(before, formatFountain(before));
+	assert.ok(edit);
+	assert.ok(before.slice(0, edit.from).startsWith("INT. DINER - NIGHT"));
+	assert.ok(edit.to < before.length, "the edit reached the end of the document");
+});
+
+test("a pure insertion has an empty range", () => {
+	const edit = minimalEdit("ab", "axb");
+	assert.deepEqual(edit, { from: 1, to: 1, text: "x" });
+});
+
+test("a pure deletion has empty text", () => {
+	const edit = minimalEdit("axb", "ab");
+	assert.deepEqual(edit, { from: 1, to: 2, text: "" });
+});
+
+test("the prefix and suffix scans never cross each other", () => {
+	// "aa" -> "a" is ambiguous: both ends match. The scan must not produce a
+	// range that runs backwards.
+	const edit = minimalEdit("aa", "a");
+	assert.ok(edit);
+	assert.ok(edit.to >= edit.from, "range runs backwards");
+	assert.equal(apply("aa", edit), "a");
+});
+
+test("an edit inside an already formatted script stays local", () => {
+	// The realistic case. Both ends already match, so only the touched region
+	// is replaced and the editor leaves the rest of the document alone.
+	const formatted = formatFountain(fixture("scene.md"));
+	const edited = formatted.replace("You said midnight.", "You said midnight.\n\n\nBeat.");
+	const edit = minimalEdit(edited, formatFountain(edited));
+	assert.ok(edit);
+	assert.ok(edit.from > 0, "the untouched head was replaced");
+	assert.ok(edit.to < edited.length, "the untouched tail was replaced");
+});
+
+test("a change at both ends widens the span, which is the known limit", () => {
+	// Trimming a common prefix and suffix cannot produce two separate hunks,
+	// so a change near the end drags the span to it. A file with no trailing
+	// newline hits this on its first format. The result is still correct, and
+	// still applied as one ordinary edit rather than a document replacement,
+	// which is what keeps the view from jumping.
+	const before = "int. a - day\n\nBeat.\n\nint. b - day\n\nBeat.";
+	const after = formatFountain(before);
+	const edit = minimalEdit(before, after);
+	assert.ok(edit);
+	assert.equal(apply(before, edit), after);
 });

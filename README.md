@@ -120,6 +120,14 @@ Two spaces on an otherwise blank line are how the spec keeps a speech open, so
 those lines are normalised to exactly two spaces rather than removed. Trimming
 them would turn dialogue into action with no visible sign.
 
+The result is applied as the smallest edit that produces it, not by replacing
+the document. Replacing everything rebuilds the editor, which drops the scroll
+position and the undo history and leaves the view somewhere unrelated. A narrow
+edit is mapped through by the editor itself, so nothing has to be restored
+afterwards. Trimming a common prefix and suffix cannot split into two hunks, so
+a change near the end widens the span, which a file with no trailing newline
+hits on its first format.
+
 **Format on save** is off by default. Obsidian saves constantly, formatting
 rewrites the file under your cursor, and a parser mistake on save becomes a
 file mistake. Run the command by hand until it is boring, then turn the setting
