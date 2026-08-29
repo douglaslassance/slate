@@ -1,3 +1,5 @@
+// Extension included so Node's test runner can load this module directly.
+import { parseFountain } from "./fountain.ts";
 export interface Shot {
 	/** Sequential shot number within the scene. */
 	number: number;
@@ -5,11 +7,11 @@ export interface Shot {
 	scene: string;
 	/** Shot type and camera movement combined (e.g. "Close-Up - Static"). */
 	camera: string;
-	/** Narrative action: what is happening in the shot. Preserve any [[wikilinks]]. */
+	/** Narrative action: what is happening in the shot. */
 	action: string;
-	/** Visual details worth noting: lighting, colors, props, atmosphere, composition. Preserve any [[wikilinks]]. */
+	/** Visual details worth noting: lighting, colors, props, atmosphere, composition. */
 	description: string;
-	/** Dialogue or spoken lines that occur during this shot (optional). Preserve any [[wikilinks]]. */
+	/** Dialogue or spoken lines that occur during this shot (optional). */
 	dialog?: string;
 }
 
@@ -41,7 +43,7 @@ DIALOGUE GOES IN THE DIALOG FIELD, NEVER IN THE ACTION FIELD.
 When a character speaks during a shot, the spoken line belongs in "dialog" and nowhere else.
 The "action" field describes what the speaker is physically doing while the line is delivered.
   BAD (forbidden): "action": "MARA: You said midnight.", "dialog": ""
-  GOOD: "action": "[[Mara]] stares across the table as she speaks.", "dialog": "[[Mara]]: You said midnight."
+  GOOD: "action": "Mara stares across the table as she speaks.", "dialog": "Mara: You said midnight."
 Never write a speaker name followed by a colon in the "action" field.
 Never leave "dialog" empty on a shot where somebody speaks.
 
@@ -57,19 +59,16 @@ Rules for the camera field:
 - Format: "{Shot Size} - {Movement}", e.g. "Close-Up - Static", "Wide Shot - Dolly In", "Medium Shot - Tracking".
 - Vary shot sizes constantly. Never use the same shot size more than twice in a row.
 
-IMPORTANT: the source text may contain Obsidian wikilinks in the form [[Name]].
-You MUST copy these exactly as-is wherever the referenced entity appears.
-Do NOT paraphrase, expand, or remove them. Write [[Keni]], never just Keni.
-
 Each object must have exactly these keys:
   number      (integer, sequential across the whole script, starting from 1)
-  scene       (string, scene heading, preserve any [[wikilinks]])
+  scene       (string, scene heading)
   camera      (string, shot type and camera movement in full words as described above)
-  action      (string, one sentence of narrative prose describing what is happening in this specific shot, never a quoted line and never prefixed with a speaker name and colon, preserve any [[wikilinks]])
-  description (string, rich visual frame description covering lighting, color, texture, wardrobe, props, depth, atmosphere, do NOT repeat camera or action, preserve any [[wikilinks]])
-  dialog      (string, speaker name followed by a colon and their spoken lines, e.g. "[[Keni]]: Hey, can you get me a Coke?", REQUIRED whenever anyone speaks even a single word, leave as an empty string only when the shot is completely silent, preserve any [[wikilinks]])
+  action      (string, one sentence of narrative prose describing what is happening in this specific shot, never a quoted line and never prefixed with a speaker name and colon)
+  description (string, rich visual frame description covering lighting, color, texture, wardrobe, props, depth, atmosphere, do NOT repeat camera or action)
+  dialog      (string, speaker name followed by a colon and their spoken lines, e.g. "Keni: Hey, can you get me a Coke?", REQUIRED whenever anyone speaks even a single word, leave as an empty string only when the shot is completely silent)
 
-REMINDER: every character name, location, or object that appeared as a [[wikilink]] in the source must remain a [[wikilink]] in your output.
+REMINDER: every spoken line in the source must appear in a "dialog" field. If anybody speaks during a shot, that shot's "dialog" is never empty.
+
 Return ONLY the raw JSON array. No markdown fences, no commentary, no preamble.`;
 
 /**
@@ -167,22 +166,30 @@ export function estimatePageCount(text: string): number {
 }
 
 // Scene headings in Fountain format (INT./EXT.) and markdown heading format (## INT. / ## EXT.).
-const SCENE_HEADING_RE = /^(#{1,3}\s*)?\**(INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s/i;
-
 /**
  * Split a script into chunks at scene boundaries, each capped at
  * maxWordsPerChunk words. A boundary only ever lands on a scene heading, so no
  * scene is ever cut in half. Smaller chunks make the model split more
  * aggressively, which is measured by tests/density.test.ts.
+ *
+ * Boundaries come from the parse rather than a pattern. That means a forced
+ * sub-slug like `.DERRIÈRE LE RIDEAU` is a boundary too, since it is a scene
+ * heading as far as the format is concerned, and a line that merely opens with
+ * "INT." inside a speech is not.
  */
 export function splitScriptIntoChunks(text: string, maxWordsPerChunk = 750): string[] {
 	const lines = text.split("\n");
+	const headings = new Set(
+		parseFountain(text)
+			.elements.filter((e) => e.kind === "scene-heading")
+			.map((e) => e.line)
+	);
 	const chunks: string[] = [];
 	let current: string[] = [];
 	let words = 0;
 
-	for (const line of lines) {
-		const isHeading = SCENE_HEADING_RE.test(line.trim());
+	for (const [index, line] of lines.entries()) {
+		const isHeading = headings.has(index);
 		const lineWords = line.trim() ? line.trim().split(/\s+/).length : 0;
 
 		if (isHeading && words >= maxWordsPerChunk && current.length > 0) {
@@ -291,7 +298,7 @@ export async function generateShotBreakdown(
 - "camera": translate shot size names and movement names (e.g. "Close-Up", "Wide Shot", "Static", "Tracking").
 - "action": translate fully.
 - "description": translate fully.
-- "dialog": translate the spoken lines into ${language.trim()}. The earlier instruction to keep "exact lines" means exact in the TARGET language, do NOT keep the source-language wording. The speaker prefix (e.g. "[[Keni]]:") stays as-is; only the spoken text is translated.
+- "dialog": translate the spoken lines into ${language.trim()}. The earlier instruction to keep "exact lines" means exact in the TARGET language, do NOT keep the source-language wording. The speaker prefix (e.g. "Keni:") stays as-is; only the spoken text is translated.
 JSON keys ("number", "scene", "camera", "action", "description", "dialog") stay in English. Every string VALUE must be in ${language.trim()}. Leaving any field in the original source language is an error.`;
 	}
 	if (customInstructions?.trim()) {
@@ -380,9 +387,7 @@ JSON keys ("number", "scene", "camera", "action", "description", "dialog") stay 
 		throw new Error("Expected a JSON array from Ollama.");
 	}
 
-	// Re-apply any [[wikilinks]] the model dropped from the original script text.
-	const knownLinks = extractWikilinks(scriptText);
-	return restoreWikilinks(shots, knownLinks);
+	return shots;
 }
 
 const FOUNTAIN_PROMPT = `You are a professional screenplay formatter.
@@ -459,7 +464,7 @@ visual characteristics useful for image generation. Omit plot details.
 Return ONLY the JSON object, no markdown, no commentary.`;
 
 /**
- * Send a single Ollama request to summarize all wikilink contents into
+ * Send a single Ollama request to summarize all entity notes into
  * compact visual descriptions. Returns a map of { [linkName]: summary }.
  */
 export async function summarizeLinks(
@@ -519,41 +524,3 @@ export async function summarizeLinks(
 
 const WIKILINK_RE = /\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g;
 
-/** Extract all unique wikilink target names from a block of text. */
-function extractWikilinks(text: string): Set<string> {
-	const names = new Set<string>();
-	for (const match of text.matchAll(WIKILINK_RE)) {
-		names.add(match[1].trim());
-	}
-	return names;
-}
-
-/**
- * Re-apply [[wikilinks]] to shot fields where the model wrote a plain name
- * instead of the bracketed form. Only names that appeared as wikilinks in the
- * original source are touched — everything else is left alone.
- */
-function restoreWikilinks(shots: Shot[], knownLinks: Set<string>): Shot[] {
-	if (knownLinks.size === 0) return shots;
-
-	const textFields = ["scene", "action", "description", "dialog"] as const;
-
-	return shots.map((shot) => {
-		const result = { ...shot };
-		for (const field of textFields) {
-			const val = result[field];
-			if (typeof val !== "string") continue;
-			let text = val;
-			for (const name of knownLinks) {
-				const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-				// Match the plain name only when it is NOT already inside [[ ]]
-				text = text.replace(
-					new RegExp(`(?<!\\[\\[)\\b${escaped}\\b(?!\\]\\])`, "g"),
-					`[[${name}]]`
-				);
-			}
-			(result as any)[field] = text;
-		}
-		return result;
-	});
-}

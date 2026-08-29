@@ -7,6 +7,8 @@ import { DEFAULT_SETTINGS, SlateSettings, SlateSettingTab, resolveOllamaHost } f
 import { generateShotBreakdown, summarizeLinks, convertToFountain, splitScriptIntoChunks, MODEL, Shot } from "./ollama";
 import { generateStoryboardImages } from "./mflux";
 import { collectLinkContents } from "./vault";
+import { parseFountain, toPlainScript } from "./fountain";
+import { extractRoster, namesIn } from "./fountain-entities";
 import { fountainEditorExtension, FOUNTAIN_EXTENSION } from "./fountain-editor";
 import { formatFountain, minimalEdit } from "./fountain-format";
 import { fountainReadingProcessor } from "./fountain-reading";
@@ -39,6 +41,15 @@ export default class SlatePlugin extends Plugin {
 				const activeFile = this.app.workspace.getActiveFile();
 				if (!activeFile) {
 					new Notice("Slate: No active file.");
+					return;
+				}
+				// A script is always Fountain. Prose or markdown goes through
+				// "Convert to Fountain" first, which is the only way in.
+				if (activeFile.extension !== FOUNTAIN_EXTENSION) {
+					new Notice(
+						`Slate: this needs a .${FOUNTAIN_EXTENSION} script. Run "Convert to Fountain" on this note first.`,
+						8000
+					);
 					return;
 				}
 
@@ -129,7 +140,8 @@ export default class SlatePlugin extends Plugin {
 				}
 
 				const notice = new Notice("Slate: Collecting links…", 0);
-				const linkContents = await collectLinkContents(shots, this.app);
+				const roster = await this.rosterForBreakdown(activeFile);
+				const linkContents = await collectLinkContents(shots, roster, this.app);
 				notice.setMessage("Slate: Summarizing links…");
 				const linkSummaries = await summarizeLinks(
 					this.ollamaHost,
@@ -197,6 +209,7 @@ export default class SlatePlugin extends Plugin {
 				try {
 					await this.runStoryboard(
 						shots,
+						await this.rosterForBreakdown(activeFile),
 						activeFile.parent?.path ?? "",
 						activeFile.parent?.name ?? activeFile.basename,
 						notice
@@ -223,15 +236,24 @@ export default class SlatePlugin extends Plugin {
 					new Notice("Slate: No active file.");
 					return;
 				}
+				// A script is always Fountain. Prose or markdown goes through
+				// "Convert to Fountain" first, which is the only way in.
+				if (activeFile.extension !== FOUNTAIN_EXTENSION) {
+					new Notice(
+						`Slate: this needs a .${FOUNTAIN_EXTENSION} script. Run "Convert to Fountain" on this note first.`,
+						8000
+					);
+					return;
+				}
 
 				const notice = new Notice("Slate: Generating shot breakdown…", 0);
 				try {
-					const { shots, breakdownFile, sceneVaultPath } =
+					const { shots, roster, breakdownFile, sceneVaultPath } =
 						await this.runShotBreakdown(activeFile, notice);
 					await this.app.workspace.getLeaf(false).openFile(breakdownFile);
 
 					notice.setMessage("Slate: Generating storyboard…");
-					await this.runStoryboard(shots, sceneVaultPath, activeFile.basename, notice);
+					await this.runStoryboard(shots, roster, sceneVaultPath, activeFile.basename, notice);
 
 					notice.hide();
 					new Notice(`Slate: Storyboard ready: ${shots.length} shots.`);
@@ -442,6 +464,26 @@ export default class SlatePlugin extends Plugin {
 	}
 
 	/**
+	 * Rebuild the cast roster from the script a breakdown came from.
+	 *
+	 * The storyboard commands can be run straight from Breakdown.md, which has
+	 * no script in front of it. A Fountain script declares no links, so the
+	 * table alone no longer carries enough to resolve a name, and the breakdown
+	 * records where it came from for exactly this.
+	 */
+	private async rosterForBreakdown(breakdownFile: TFile): Promise<string[]> {
+		const path = this.app.metadataCache.getFileCache(breakdownFile)?.frontmatter?.script;
+		if (typeof path !== "string") return [];
+
+		const script = this.app.vault.getAbstractFileByPath(path);
+		if (!(script instanceof TFile)) {
+			log(`Breakdown points at a script that is gone: ${path}`);
+			return [];
+		}
+		return extractRoster(parseFountain(await this.app.vault.read(script)));
+	}
+
+	/**
 	 * Break a script note into shots and write Breakdown.md into its scene folder.
 	 *
 	 * Returns the shots alongside the scene folder they belong to, so a caller can
@@ -450,11 +492,18 @@ export default class SlatePlugin extends Plugin {
 	private async runShotBreakdown(
 		scriptFile: TFile,
 		notice: Notice
-	): Promise<{ shots: Shot[]; breakdownFile: TFile; sceneVaultPath: string }> {
-		const scriptText = (await this.app.vault.read(scriptFile)).trim();
+	): Promise<{ shots: Shot[]; roster: string[]; breakdownFile: TFile; sceneVaultPath: string }> {
+		const source = await this.app.vault.read(scriptFile);
+		// Notes and boneyard are annotations the spec drops from output, so the
+		// model never sees them.
+		const scriptText = toPlainScript(source);
 		if (!scriptText) {
 			throw new Error("The current note is empty.");
 		}
+
+		// The cast comes from the script's own structure: who speaks, and who is
+		// introduced in capitals. A Fountain script declares no links.
+		const roster = extractRoster(parseFountain(source));
 
 		const chunks = splitScriptIntoChunks(scriptText, this.settings.breakdownChunkSize);
 		const wordCount = scriptText.split(/\s+/).length;
@@ -491,9 +540,13 @@ export default class SlatePlugin extends Plugin {
 		await ensureVaultFolder(sceneVaultPath, this.app);
 
 		const table = buildMarkdownTable(shots);
-		const content = inlineTitle(this.app)
+		const body = inlineTitle(this.app)
 			? table
 			: `# ${baseName} - Shot breakdown\n\n${table}`;
+		// The script is recorded so the standalone storyboard commands can
+		// rebuild the cast roster. A Fountain script declares no links, so the
+		// breakdown table alone no longer carries enough to resolve names.
+		const content = `---\nscript: "${scriptFile.path}"\n---\n\n${body}`;
 
 		const existing = this.app.vault.getAbstractFileByPath(breakdownVaultPath);
 		let breakdownFile: TFile;
@@ -504,7 +557,7 @@ export default class SlatePlugin extends Plugin {
 			breakdownFile = await this.app.vault.create(breakdownVaultPath, content);
 		}
 
-		return { shots, breakdownFile, sceneVaultPath };
+		return { shots, roster, breakdownFile, sceneVaultPath };
 	}
 
 	/**
@@ -513,6 +566,7 @@ export default class SlatePlugin extends Plugin {
 	 */
 	private async runStoryboard(
 		shots: Shot[],
+		roster: string[],
 		sceneVaultPath: string,
 		sceneName: string,
 		notice: Notice
@@ -534,7 +588,7 @@ export default class SlatePlugin extends Plugin {
 		try {
 			// 1. Resolve wikilinks
 			notice.setMessage("Slate: Collecting links…");
-			const linkContents = await collectLinkContents(shots, this.app);
+			const linkContents = await collectLinkContents(shots, roster, this.app);
 			log(`Found ${linkContents.length} wikilink(s) to summarize.`);
 			notice.setMessage("Slate: Summarizing links…");
 			if (linkContents.length > 0) {
@@ -559,9 +613,8 @@ export default class SlatePlugin extends Plugin {
 
 			const resolvedDescriptions = shots.map((s) => {
 				const shotText = `${s.scene} ${s.action} ${s.description} ${s.dialog ?? ""}`;
-				const featured = Object.entries(linkSummaries).filter(([name]) =>
-					shotText.includes(`[[${name}]]`)
-				);
+				const present = new Set(namesIn(shotText, Object.keys(linkSummaries)));
+				const featured = Object.entries(linkSummaries).filter(([name]) => present.has(name));
 
 				const sentences: string[] = [];
 
@@ -738,9 +791,8 @@ function buildShotPrompt(
 	const body: string[] = [];
 
 	const shotText = `${shot.scene} ${shot.action} ${shot.description} ${shot.dialog ?? ""}`;
-	const featured = Object.entries(linkSummaries).filter(([name]) =>
-		shotText.includes(`[[${name}]]`)
-	);
+	const present = new Set(namesIn(shotText, Object.keys(linkSummaries)));
+	const featured = Object.entries(linkSummaries).filter(([name]) => present.has(name));
 
 	if (settings.mfluxPromptHeader) {
 		body.push(settings.mfluxPromptHeader.trim());

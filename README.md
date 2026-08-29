@@ -158,6 +158,23 @@ blank line on both sides, a line holding only a note is removed without breaking
 the dialogue block around it, and two spaces on an otherwise blank line keep a
 speech open.
 
+### Scripts are always Fountain
+
+_Generate shot breakdown_ and _Generate storyboard from script_ only run on a
+`.fountain` file. Prose or markdown goes through _Convert to Fountain_ first,
+which writes a `.fountain` file beside the note. That is the only way in, and it
+means one parser and one set of assumptions rather than a markdown path and a
+Fountain path kept in step with each other.
+
+The script declares no links. `[[...]]` is a Fountain note, so it is stripped
+before the model ever sees the text. Characters and locations are recognised in
+the model's output afterwards, by matching the roster the parse produced. The
+breakdown records the script it came from in its frontmatter, so the storyboard
+commands can rebuild that roster when run on their own from `Breakdown.md`.
+
+Chunk boundaries come from the parse rather than a pattern, so a forced sub-slug
+counts as a boundary too.
+
 ## Testing
 
 The shot breakdown is a prompt plus a model, so its quality is not something the

@@ -152,15 +152,46 @@ function escapeRe(text: string): string {
  * a later mention in mixed case both resolve. It is never fuzzy: only the full
  * roster name matches, so `LE ROI KAGI` does not turn every `le roi` in the
  * script into a link.
- *
- * Longer names are matched first, so `LE ROI KAGI` wins over `LE ROI` where
- * both are on the roster.
  */
+/**
+ * A pattern matching any of `names` as a whole word, case insensitively.
+ *
+ * Longer names first, so `LE ROI KAGI` wins over `LE ROI` where both are on
+ * the roster. The lookarounds are what keep `le roi` from matching inside
+ * `LE ROI KAGI`, and what keep this from being a substring search.
+ */
+function namePattern(names: string[]): RegExp {
+	const ordered = [...names].sort((a, b) => b.length - a.length);
+	return new RegExp(
+		`(?<![\\p{L}\\d])(${ordered.map(escapeRe).join("|")})(?![\\p{L}\\d])`,
+		"giu"
+	);
+}
+
+/**
+ * Which of `names` appear in a block of prose, in roster order.
+ *
+ * Used to work out which characters and locations a shot features, now that
+ * the script carries no brackets to declare it. The shot text comes back from
+ * the model as plain prose, so the names have to be recognised rather than
+ * read off.
+ */
+export function namesIn(text: string, names: string[]): string[] {
+	if (names.length === 0 || !text) return [];
+
+	const byUpper = new Map(names.map((n) => [n.toUpperCase(), n]));
+	const found = new Set<string>();
+	for (const m of text.matchAll(namePattern(names))) {
+		const name = byUpper.get(m[1].toUpperCase());
+		if (name) found.add(name);
+	}
+	return names.filter((n) => found.has(n));
+}
+
 export function findMentions(script: Script, names: string[]): Mention[] {
 	if (names.length === 0) return [];
 
-	const ordered = [...names].sort((a, b) => b.length - a.length);
-	const pattern = new RegExp(`(?<![\\p{L}\\d])(${ordered.map(escapeRe).join("|")})(?![\\p{L}\\d])`, "giu");
+	const pattern = namePattern(names);
 
 	const mentions: Mention[] = [];
 	const byUpper = new Map(names.map((n) => [n.toUpperCase(), n]));

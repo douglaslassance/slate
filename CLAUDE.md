@@ -43,6 +43,13 @@ instead, which silently drops the on-screen text instruction from the storyboard
 prompt. The DIALOGUE section of `SYSTEM_PROMPT` exists to fix that, so do not
 drop it without re-measuring.
 
+That fragility is not only about the DIALOGUE section. The prompt used to close
+on a REMINDER line about wikilinks. Removing it, when scripts stopped carrying
+wikilinks, broke dialogue capture on the very next live run even though the
+DIALOGUE section itself was untouched: the model had lost the last thing it
+read. The closing REMINDER is now about dialogue instead, and it is load
+bearing. Keep the prompt ending on a reminder of whatever is most fragile.
+
 ### Is chunking still needed?
 
 Yes on qwen2.5:32b, as of 2026-08-22. Measured over the 889 word fixture with
@@ -73,6 +80,8 @@ Tests live in `tests/` and run on Node's built-in runner with native TypeScript,
 so there is no test framework dependency and no build step.
 
 - `tests/chunking.test.ts` is offline and always runs.
+- `tests/fountain.test.ts`, `tests/entities.test.ts`, `tests/format.test.ts`
+  and `tests/suggest.test.ts` are offline and always run.
 - `tests/breakdown.test.ts` calls the real model and skips when Ollama is
   unreachable or the model is not pulled.
 - `tests/lora.test.ts` is offline and always runs.
