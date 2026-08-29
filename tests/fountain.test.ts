@@ -263,10 +263,11 @@ test("title page continuations need three spaces or a tab", () => {
 });
 
 test("the scene fixture parses into the elements the breakdown assumes", () => {
-	const script = parseFountain(fixture("scene.md"));
+	const script = parseFountain(fixture("scene.fountain"));
 	assert.deepEqual(script.characters, ["MARA", "KENI"]);
 	assert.deepEqual(script.locations, ["Rialto Diner"]);
 	assert.ok(script.elements.some((e) => e.kind === "dialogue"));
-	// Every prose wikilink in the fixture is a Fountain note.
-	assert.ok(script.elements.some((e) => (e.notes?.length ?? 0) > 0));
+	// The fixture carries no brackets: a script declares no links, and the
+	// names are recognised in the prose afterwards instead.
+	assert.equal(script.notes.length, 0);
 });

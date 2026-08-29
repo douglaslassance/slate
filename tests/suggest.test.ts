@@ -93,7 +93,7 @@ test("a transition is listed once however often it is used", () => {
 });
 
 test("the fixture yields its own vocabulary", () => {
-	const v = vocab(fixture("scene.md"));
+	const v = vocab(fixture("scene.fountain"));
 	assert.deepEqual(v.characters, ["MARA", "KENI"]);
 	assert.deepEqual(v.locations, ["Rialto Diner"]);
 	assert.equal(v.times[0], "NIGHT");

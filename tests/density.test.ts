@@ -92,7 +92,7 @@ before(async () => {
 		return;
 	}
 
-	const script = fixture("script.md");
+	const script = fixture("script.fountain");
 	const words = wordCount(script);
 
 	// Single call: the entire script in one request.

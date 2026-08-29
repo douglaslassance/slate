@@ -88,5 +88,5 @@ test("mentions come back in document order", () => {
 });
 
 test("the real fixture yields its speaking cast", () => {
-	assert.deepEqual(roster(fixture("scene.md")), ["MARA", "KENI"]);
+	assert.deepEqual(roster(fixture("scene.fountain")), ["MARA", "KENI"]);
 });

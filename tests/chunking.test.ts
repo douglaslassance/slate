@@ -13,20 +13,20 @@ import { fixture, wordCount } from "./helpers.ts";
 const SCENE_HEADING_RE = /^(#{1,3}\s*)?\**(INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s/i;
 
 test("a script shorter than the cap stays in one chunk", () => {
-	const scene = fixture("scene.md");
+	const scene = fixture("scene.fountain");
 	const chunks = splitScriptIntoChunks(scene, 750);
 	assert.equal(chunks.length, 1);
 	assert.equal(chunks[0], scene);
 });
 
 test("a long script splits into several chunks", () => {
-	const script = fixture("script.md");
+	const script = fixture("script.fountain");
 	const chunks = splitScriptIntoChunks(script, 250);
 	assert.ok(chunks.length > 1, `expected multiple chunks, got ${chunks.length}`);
 });
 
 test("every chunk after the first starts on a scene heading", () => {
-	const script = fixture("script.md");
+	const script = fixture("script.fountain");
 	const chunks = splitScriptIntoChunks(script, 250);
 	for (const chunk of chunks.slice(1)) {
 		const firstLine = chunk.split("\n")[0].trim();
@@ -39,23 +39,37 @@ test("every chunk after the first starts on a scene heading", () => {
 });
 
 test("chunking loses no words", () => {
-	const script = fixture("script.md");
+	const script = fixture("script.fountain");
 	const chunks = splitScriptIntoChunks(script, 250);
 	const rejoined = chunks.join("\n").split(/\s+/).filter(Boolean).join(" ");
 	const original = script.split(/\s+/).filter(Boolean).join(" ");
 	assert.equal(rejoined, original);
 });
 
-test("markdown-style scene headings are recognised as boundaries", () => {
+test("a forced sub-slug is a boundary too", () => {
+	// Boundaries come from the parse, so ".DERRIÈRE LE RIDEAU" counts as a
+	// scene heading the same way an INT. line does.
+	const script = [
+		"INT. KITCHEN - DAY",
+		"A kettle boils. ".repeat(40),
+		".BEHIND THE CURTAIN",
+		"Rain falls on the beds.",
+	].join("\n\n");
+	const chunks = splitScriptIntoChunks(script, 50);
+	assert.equal(chunks.length, 2);
+	assert.equal(chunks[1].split("\n")[0].trim(), ".BEHIND THE CURTAIN");
+});
+
+test("markdown headings are no longer boundaries", () => {
+	// A script is always Fountain now, and "## INT." is a section there, not a
+	// scene heading. Prose goes through "Convert to Fountain" first.
 	const script = [
 		"## INT. KITCHEN - DAY",
 		"A kettle boils. ".repeat(40),
 		"## EXT. GARDEN - DAY",
 		"Rain falls on the beds.",
 	].join("\n\n");
-	const chunks = splitScriptIntoChunks(script, 50);
-	assert.equal(chunks.length, 2);
-	assert.match(chunks[1].split("\n")[0].trim(), SCENE_HEADING_RE);
+	assert.equal(splitScriptIntoChunks(script, 50).length, 1);
 });
 
 test("a single scene longer than the cap is never split", () => {
@@ -73,6 +87,6 @@ test("page count follows the 250 words per page convention", () => {
 });
 
 test("the fixtures are the sizes the live tests assume", () => {
-	assert.ok(wordCount(fixture("scene.md")) < 200);
-	assert.ok(wordCount(fixture("script.md")) > 800);
+	assert.ok(wordCount(fixture("scene.fountain")) < 200);
+	assert.ok(wordCount(fixture("script.fountain")) > 800);
 });

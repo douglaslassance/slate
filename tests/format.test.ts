@@ -116,7 +116,7 @@ test("formatting is idempotent", () => {
 
 test("formatting never changes what the elements are", () => {
 	// The whole safety claim in one assertion, run over a real script.
-	const src = fixture("scene.md");
+	const src = fixture("scene.fountain");
 	const before = parseFountain(src).elements.map((e) => e.kind);
 	const after = parseFountain(formatFountain(src)).elements.map((e) => e.kind);
 	assert.deepEqual(after, before);
@@ -177,7 +177,7 @@ test("the prefix and suffix scans never cross each other", () => {
 test("an edit inside an already formatted script stays local", () => {
 	// The realistic case. Both ends already match, so only the touched region
 	// is replaced and the editor leaves the rest of the document alone.
-	const formatted = formatFountain(fixture("scene.md"));
+	const formatted = formatFountain(fixture("scene.fountain"));
 	const edited = formatted.replace("You said midnight.", "You said midnight.\n\n\nBeat.");
 	const edit = minimalEdit(edited, formatFountain(edited));
 	assert.ok(edit);

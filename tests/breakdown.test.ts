@@ -82,7 +82,7 @@ before(async () => {
 		skip = reason;
 		return;
 	}
-	shots = await generateShotBreakdown(HOST, MODEL, fixture("scene.md"));
+	shots = await generateShotBreakdown(HOST, MODEL, fixture("scene.fountain"));
 	console.log(`\n${MODEL}: ${shots.length} shots from the scene fixture\n`);
 });
 
@@ -148,16 +148,15 @@ test("coverage varies the shot size", (t) => {
 	);
 });
 
-test("wikilinks from the source survive into the breakdown", (t) => {
+test("names from the source survive into the breakdown", (t) => {
+	// A Fountain script declares no links, so the names have to come through as
+	// plain prose for entity resolution to recognise them afterwards.
 	if (skip) return t.skip(skip);
-	// restoreWikilinks in ollama.ts re-brackets names the model dropped, so this
-	// asserts the pipeline result. It still catches a model that renames or
-	// invents entities, because a renamed entity never gets re-bracketed.
-	const all = shots
-		.map((s) => `${s.scene} ${s.action} ${s.description} ${s.dialog ?? ""}`)
+	const text = shots
+		.flatMap((s) => [s.scene, s.action, s.description, s.dialog ?? ""])
 		.join(" ");
-	for (const link of ["[[Keni]]", "[[Mara]]", "[[Rialto Diner]]"]) {
-		assert.ok(all.includes(link), `${link} never appears in the breakdown`);
+	for (const name of ["Keni", "Mara", "Rialto Diner"]) {
+		assert.match(text, new RegExp(name, "i"), `${name} vanished from the breakdown`);
 	}
 });
 
