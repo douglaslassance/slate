@@ -8,7 +8,7 @@ import { generateShotBreakdown, summarizeLinks, convertToFountain, splitScriptIn
 import { generateStoryboardImages } from "./mflux";
 import { collectLinkContents } from "./vault";
 import { parseFountain, toPlainScript } from "./fountain";
-import { extractRoster, namesIn } from "./fountain-entities";
+import { extractRoster, linkNames, namesIn } from "./fountain-entities";
 import { fountainEditorExtension, FOUNTAIN_EXTENSION } from "./fountain-editor";
 import { formatFountain, minimalEdit } from "./fountain-format";
 import { fountainReadingProcessor } from "./fountain-reading";
@@ -503,7 +503,9 @@ export default class SlatePlugin extends Plugin {
 
 		// The cast comes from the script's own structure: who speaks, and who is
 		// introduced in capitals. A Fountain script declares no links.
-		const roster = extractRoster(parseFountain(source));
+		const parsed = parseFountain(source);
+		const roster = extractRoster(parsed);
+		const locations = parsed.locations;
 
 		const chunks = splitScriptIntoChunks(scriptText, this.settings.breakdownChunkSize);
 		const wordCount = scriptText.split(/\s+/).length;
@@ -539,7 +541,7 @@ export default class SlatePlugin extends Plugin {
 
 		await ensureVaultFolder(sceneVaultPath, this.app);
 
-		const table = buildMarkdownTable(shots);
+		const table = buildMarkdownTable(shots, [...roster, ...locations]);
 		const body = inlineTitle(this.app)
 			? table
 			: `# ${baseName} - Shot breakdown\n\n${table}`;
@@ -814,13 +816,20 @@ function buildShotPrompt(
 	return `\`\`\`\n${body.join("\n\n")}\n\`\`\`\n\n${imageEmbed}\n\n${breakdownLink}`;
 }
 
-function buildMarkdownTable(shots: Shot[]): string {
+/**
+ * Render the breakdown table, linking the cast and locations on the way out.
+ *
+ * The camera column is left alone: it holds shot sizes and movement, never a
+ * name, and linking a stray word there would be noise.
+ */
+function buildMarkdownTable(shots: Shot[], names: string[]): string {
 	const header =
 		"| # | Scene | Camera | Action | Description | Dialog |\n" +
 		"|---|-------|--------|--------|-------------|--------|";
 
+	const link = (text: string) => esc(linkNames(text, names));
 	const rows = shots.map((s) =>
-		`| ${s.number} | ${esc(s.scene)} | ${esc(s.camera)} | ${esc(s.action)} | ${esc(s.description)} | ${esc(s.dialog ?? "")} |`
+		`| ${s.number} | ${link(s.scene)} | ${esc(s.camera)} | ${link(s.action)} | ${link(s.description)} | ${link(s.dialog ?? "")} |`
 	);
 
 	return [header, ...rows].join("\n");
