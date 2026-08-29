@@ -168,7 +168,14 @@ Fountain path kept in step with each other.
 
 The script declares no links. `[[...]]` is a Fountain note, so it is stripped
 before the model ever sees the text. Characters and locations are recognised in
-the model's output afterwards, by matching the roster the parse produced. The
+the model's output afterwards, by matching the roster the parse produced.
+
+Matching inside a script is case sensitive, because a screenplay already says
+what it means: a name in capitals is the character, the same word in lower case
+is the word. That is what keeps `un homme qui va couper un ruban` from linking
+to the man in the spacesuit. In derived text it is not, because shot text comes
+back from the model as ordinary prose where that convention does not hold, so
+the breakdown links only names that have a note behind them instead. The
 breakdown records the script it came from in its frontmatter, so the storyboard
 commands can rebuild that roster when run on their own from `Breakdown.md`.
 

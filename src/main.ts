@@ -541,7 +541,13 @@ export default class SlatePlugin extends Plugin {
 
 		await ensureVaultFolder(sceneVaultPath, this.app);
 
-		const table = buildMarkdownTable(shots, [...roster, ...locations]);
+		// Only names with a note behind them are linked. The caps convention that
+		// disambiguates the script does not survive into the model's prose, so
+		// note existence is what stops a common noun becoming a link here.
+		const linkable = [...roster, ...locations].filter((name) =>
+			Boolean(this.app.metadataCache.getFirstLinkpathDest(name, scriptFile.path))
+		);
+		const table = buildMarkdownTable(shots, linkable);
 		const body = inlineTitle(this.app)
 			? table
 			: `# ${baseName} - Shot breakdown\n\n${table}`;
