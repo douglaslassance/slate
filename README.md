@@ -175,6 +175,13 @@ commands can rebuild that roster when run on their own from `Breakdown.md`.
 Chunk boundaries come from the parse rather than a pattern, so a forced sub-slug
 counts as a boundary too.
 
+The breakdown, on the other hand, is an ordinary markdown note, so the cast and
+locations are wrapped in wikilinks on the way into it. Brackets cost nothing
+there and buy the graph, backlinks, hover preview, and a click that creates a
+character note that does not exist yet. The casing written in the prose is kept,
+since Obsidian resolves `[[MARA]]` and `[[Mara]]` to the same note and rewriting
+the sentence to match the roster would be worse.
+
 ## Testing
 
 The shot breakdown is a prompt plus a model, so its quality is not something the

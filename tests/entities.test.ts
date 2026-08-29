@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseFountain } from "../src/fountain.ts";
-import { extractRoster, findMentions } from "../src/fountain-entities.ts";
+import { extractRoster, findMentions, linkNames } from "../src/fountain-entities.ts";
 import { fixture } from "./helpers.ts";
 
 const roster = (src: string) => extractRoster(parseFountain(src));
@@ -89,4 +89,39 @@ test("mentions come back in document order", () => {
 
 test("the real fixture yields its speaking cast", () => {
 	assert.deepEqual(roster(fixture("scene.fountain")), ["MARA", "KENI"]);
+});
+
+// ── Liens dans le découpage ─────────────────────────────────────────────────
+
+test("names are wrapped in wikilinks on the way into the breakdown", () => {
+	// The script carries no brackets, but a breakdown is markdown and gains
+	// the graph, backlinks and hover preview from them.
+	assert.equal(
+		linkNames("Mara stares at Keni.", ["Mara", "Keni"]),
+		"[[Mara]] stares at [[Keni]]."
+	);
+});
+
+test("the casing written in the prose is kept inside the link", () => {
+	// Obsidian resolves both to the same note, and rewriting the prose to match
+	// the roster would change the sentence.
+	assert.equal(linkNames("MARA slams the door.", ["Mara"]), "[[MARA]] slams the door.");
+});
+
+test("only whole words are linked", () => {
+	// The same rule the editor uses: "le roi" must not link inside "LE ROI KAGI",
+	// and a name must not be found in the middle of another word.
+	assert.equal(linkNames("Il maraude un peu.", ["Mara"]), "Il maraude un peu.");
+});
+
+test("the longer name wins where two overlap", () => {
+	assert.equal(
+		linkNames("LE ROI KAGI entre.", ["LE ROI", "LE ROI KAGI"]),
+		"[[LE ROI KAGI]] entre."
+	);
+});
+
+test("text with no known name is returned untouched", () => {
+	assert.equal(linkNames("Rain falls.", ["Mara"]), "Rain falls.");
+	assert.equal(linkNames("Rain falls.", []), "Rain falls.");
 });

@@ -327,3 +327,24 @@ export function rankByQuery<T extends { text: string }>(items: T[], query: strin
 
 	return [...starts, ...wordStarts];
 }
+
+/**
+ * Wrap every occurrence of `names` in Obsidian wikilinks.
+ *
+ * The script itself never carries brackets, because `[[...]]` is a Fountain
+ * note there and would be dropped from the printed page. A breakdown is an
+ * ordinary markdown note, where brackets cost nothing and buy the graph,
+ * backlinks, hover preview, and a click that creates the note when it does not
+ * exist yet. So the linking happens on the way out, not in the source.
+ *
+ * The original casing in the prose is kept, so `Mara` links as `[[Mara]]` and
+ * `MARA` as `[[MARA]]`, both of which Obsidian resolves to the same note.
+ */
+export function linkNames(text: string, names: string[]): string {
+	if (names.length === 0 || !text) return text;
+
+	const known = new Set(names.map((n) => n.toUpperCase()));
+	return text.replace(namePattern(names), (match) =>
+		known.has(match.toUpperCase()) ? `[[${match}]]` : match
+	);
+}
