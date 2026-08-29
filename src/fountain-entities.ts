@@ -148,23 +148,30 @@ function escapeRe(text: string): string {
 /**
  * Every mention of the given names in the script's prose.
  *
- * Matching is case insensitive on whole words, so an introduction in caps and
- * a later mention in mixed case both resolve. It is never fuzzy: only the full
- * roster name matches, so `LE ROI KAGI` does not turn every `le roi` in the
- * script into a link.
+ * Matching is case sensitive, because a screenplay already says what it means:
+ * a name in capitals is the character, the same word in lower case is the
+ * word. That is what keeps `un homme qui va couper un ruban` from linking to
+ * the man in the spacesuit. It is never fuzzy either: only the full roster
+ * name matches, so `LE ROI` does not match inside `LE ROI KAGI`.
  */
 /**
- * A pattern matching any of `names` as a whole word, case insensitively.
+ * A pattern matching any of `names` as a whole word.
  *
  * Longer names first, so `LE ROI KAGI` wins over `LE ROI` where both are on
  * the roster. The lookarounds are what keep `le roi` from matching inside
  * `LE ROI KAGI`, and what keep this from being a substring search.
+ *
+ * Case matters in a script and does not in derived text, which is why callers
+ * choose. A screenplay capitalises a name when it means the character and
+ * lower cases it when it means the word, so `un homme qui va couper un ruban`
+ * is not the man in the spacesuit. Shot text comes back from the model as
+ * ordinary prose, where that convention does not hold.
  */
-function namePattern(names: string[]): RegExp {
+function namePattern(names: string[], caseSensitive: boolean): RegExp {
 	const ordered = [...names].sort((a, b) => b.length - a.length);
 	return new RegExp(
 		`(?<![\\p{L}\\d])(${ordered.map(escapeRe).join("|")})(?![\\p{L}\\d])`,
-		"giu"
+		caseSensitive ? "gu" : "giu"
 	);
 }
 
@@ -176,12 +183,12 @@ function namePattern(names: string[]): RegExp {
  * the model as plain prose, so the names have to be recognised rather than
  * read off.
  */
-export function namesIn(text: string, names: string[]): string[] {
+export function namesIn(text: string, names: string[], caseSensitive = false): string[] {
 	if (names.length === 0 || !text) return [];
 
 	const byUpper = new Map(names.map((n) => [n.toUpperCase(), n]));
 	const found = new Set<string>();
-	for (const m of text.matchAll(namePattern(names))) {
+	for (const m of text.matchAll(namePattern(names, caseSensitive))) {
 		const name = byUpper.get(m[1].toUpperCase());
 		if (name) found.add(name);
 	}
@@ -191,7 +198,7 @@ export function namesIn(text: string, names: string[]): string[] {
 export function findMentions(script: Script, names: string[]): Mention[] {
 	if (names.length === 0) return [];
 
-	const pattern = namePattern(names);
+	const pattern = namePattern(names, true);
 
 	const mentions: Mention[] = [];
 	const byUpper = new Map(names.map((n) => [n.toUpperCase(), n]));
@@ -344,7 +351,7 @@ export function linkNames(text: string, names: string[]): string {
 	if (names.length === 0 || !text) return text;
 
 	const known = new Set(names.map((n) => n.toUpperCase()));
-	return text.replace(namePattern(names), (match) =>
+	return text.replace(namePattern(names, false), (match) =>
 		known.has(match.toUpperCase()) ? `[[${match}]]` : match
 	);
 }

@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseFountain } from "../src/fountain.ts";
-import { extractRoster, findMentions, linkNames } from "../src/fountain-entities.ts";
+import { extractRoster, findMentions, linkNames, namesIn } from "../src/fountain-entities.ts";
 import { fixture } from "./helpers.ts";
 
 const roster = (src: string) => extractRoster(parseFountain(src));
@@ -52,16 +52,22 @@ test("a name is listed once however often it appears", () => {
 	assert.deepEqual(roster(src), ["BISCOTTE"]);
 });
 
-test("mentions are found case insensitively on whole words", () => {
-	const src = "INT. PALAIS - JOUR\n\nLE ROI KAGI entre.\n\nPuis Le Roi Kagi sort.";
+test("only capitalised mentions link, because that is what caps mean", () => {
+	// A screenplay capitalises a name when it means the character. Matching
+	// case insensitively turned "un homme qui va couper un ruban" into a link
+	// to the man in the spacesuit, which is the whole reason for this rule.
+	const src = "INT. PALAIS - JOUR\n\nUn HOMME entre.\n\nLe roi monte avec la gravité d'un homme.";
 	const script = parseFountain(src);
-	const mentions = findMentions(script, extractRoster(script));
-	assert.equal(mentions.length, 2);
-	assert.deepEqual(mentions.map((m) => m.name), ["LE ROI KAGI", "LE ROI KAGI"]);
-	// Ranges point at the real text.
-	for (const m of mentions) {
-		assert.equal(src.slice(m.start, m.end).toUpperCase(), "LE ROI KAGI");
-	}
+	const mentions = findMentions(script, ["HOMME"]);
+	assert.equal(mentions.length, 1);
+	assert.equal(src.slice(mentions[0].start, mentions[0].end), "HOMME");
+});
+
+test("derived text still matches without regard to case", () => {
+	// Shot text comes back from the model as ordinary prose, where the caps
+	// convention does not hold, so the breakdown falls back to loose matching.
+	assert.deepEqual(namesIn("Mara stares at keni.", ["Mara", "Keni"]), ["Mara", "Keni"]);
+	assert.deepEqual(namesIn("Mara stares at keni.", ["Mara", "Keni"], true), ["Mara"]);
 });
 
 test("a partial word never matches", () => {
