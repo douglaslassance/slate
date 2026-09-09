@@ -78,8 +78,12 @@ Return ONLY the raw JSON array. No markdown fences, no commentary, no preamble.`
  * action per shot, so swapping it silently changes the output quality. The
  * `model` parameter on the functions below exists so the test suites can
  * measure a candidate before it ever becomes the default.
+ *
+ * Migrated from qwen2.5:32b on 2026-09-09. The thresholds in tests/breakdown.test.ts
+ * and tests/density.test.ts are still calibrated against qwen2.5:32b and have not
+ * been re-measured against this model. See the note in each file.
  */
-export const MODEL = "qwen2.5:32b";
+export const MODEL = "qwen3.6:27b";
 
 /**
  * Ensure a model is available locally, pulling it from the registry if not.
