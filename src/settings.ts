@@ -101,7 +101,7 @@ export class SlateSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Ollama host")
-			.setDesc("URL of your local Ollama server. Leave blank to use http://localhost:11434. Slate runs on qwen3.6:27b and pulls it automatically the first time you generate.")
+			.setDesc("URL of your local Ollama server. Leave blank to use http://localhost:11434. Slate runs on qwen2.5:32b and pulls it automatically the first time you generate.")
 			.addText((text) =>
 				text
 					.setPlaceholder("http://localhost:11434")
