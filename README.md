@@ -208,7 +208,7 @@ schema completeness, camera field format, wikilink survival, and dialogue
 capture. Point it at any candidate model to compare on equal footing:
 
 ```bash
-SLATE_TEST_MODEL=qwen2.5:32b npm run test:live
+SLATE_TEST_MODEL=mistral:latest npm run test:live
 ```
 
 `tests/density.test.ts` answers whether the script still needs to be split into
@@ -218,8 +218,7 @@ in place. One assertion guards the chunked density against a model that starts
 summarising. Another goes red on good news, when a single call gets close enough
 to the chunked result that splitting stops paying for itself.
 
-On `qwen2.5:32b` the split still bought about 29% more shots, so chunking stays. This
-has not been re-measured since the 2026-09-09 move to `qwen3.6:27b`.
+On `qwen2.5:32b` the split still buys about 29% more shots, so chunking stays.
 
 ```bash
 npm run test:density

@@ -6,10 +6,6 @@
  * Chunking costs extra round trips and loses cross-scene context, so it is worth
  * knowing whether the current model still needs it.
  *
- * STALE AS OF 2026-09-09: the default model moved to qwen3.6:27b and none of the
- * numbers below have been re-measured against it. The question this test answers,
- * whether chunking still pays, has to be re-asked for every model.
- *
  * Measured 2026-08-22 over the 889 word fixture, three chunks of 250 words:
  *
  *   qwen2.5:32b       87 shots in one call, 112 chunked. Chunking wins by 29%.
@@ -30,7 +26,7 @@
  *
  * Point it at another model to compare candidates on equal footing:
  *
- *   SLATE_TEST_DENSITY=1 SLATE_TEST_MODEL=qwen2.5:32b npm run test:density
+ *   SLATE_TEST_DENSITY=1 SLATE_TEST_MODEL=mistral:latest npm run test:density
  */
 
 import { test, before } from "node:test";
@@ -46,17 +42,15 @@ const CHUNK_SIZE = Number(process.env.SLATE_TEST_CHUNK_SIZE ?? 250);
  * extra round trips stop paying for themselves. At 0.9, a single call that
  * recovers 90% of the chunked shot density makes chunking not worth keeping.
  *
- * Measured 2026-08-22 on qwen2.5:32b: 0.78. Chunking still earned its keep, so
- * the assertion below is written to go red when that stops being true. Not yet
- * re-measured on qwen3.6:27b; if that model closes the gap this goes red as
- * good news, meaning chunking can be dropped.
+ * Measured 2026-08-22 on qwen2.5:32b: 0.78. Chunking still earns its keep, so
+ * the assertion below is written to go red when that stops being true.
  */
 const CHUNKING_UNNECESSARY_AT = 0.9;
 
 /**
  * Shots per 100 words the chunked path must still reach. Measured 12.60 on
  * qwen2.5:32b, so this floor catches a model that starts summarising without
- * tripping on ordinary run-to-run variance. Not re-measured on qwen3.6:27b.
+ * tripping on ordinary run-to-run variance.
  */
 const MIN_CHUNKED_DENSITY = 9;
 

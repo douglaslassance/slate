@@ -35,30 +35,14 @@ Obsidian has a "Show inline title" setting (Appearance → Show inline title, on
 
 ## Ollama model
 
-Slate runs on `qwen3.6:27b`, matching the yello and kitsch projects. It is a constant in
+Slate runs on `qwen2.5:32b`, matching the yello project. It is a constant in
 `src/ollama.ts`, deliberately not a setting, because the system prompt is tuned
 around this model and a user swapping it silently degrades the output. The
 `model` parameter on the ollama.ts functions exists only so the test suites can
 measure a candidate before it is promoted.
 
-Lineage: `codestral:latest`, then `qwen2.5:32b` (on the test scene fixture it produced
-about 20 shots where codestral produced 14), then `qwen3.6:27b` from 2026-09-09.
-
-`qwen3.8:27b` was considered and rejected. It runs extended reasoning by default, at
-roughly half the throughput of 3.6 on comparable hardware, and emits reasoning traces.
-Both are pure cost here: the breakdown is one-shot structured extraction against a
-fixed schema, not an agentic loop that reasoning would rescue from correction cycles.
-The traces are an active hazard for this file specifically, because the request below
-sets no `format` and the parser only strips fences, smart quotes, stray keys and `//`
-comments. If a future model emits a thinking block, JSON.parse dies. Set `format: "json"`
-before promoting any reasoning model.
-
-The 2026-09-09 swap to `qwen3.6:27b` has not been validated against the live suites.
-Every measured number below, and every threshold in `tests/`, was calibrated on
-`qwen2.5:32b`. Run `npm run test:live` and `npm run test:density` and re-measure before
-trusting any of it. A stronger model producing fewer, better shots will read as a
-threshold failure while actually being an improvement, so read the output, not just
-the pass/fail.
+It replaced `codestral:latest`, and on the test scene fixture it produces about
+20 shots where codestral produces 14.
 
 Changing the default means re-running the live suites, because the prompt is
 tuned around the model's willingness to split one action per shot rather than
@@ -77,8 +61,7 @@ bearing. Keep the prompt ending on a reminder of whatever is most fragile.
 
 ### Is chunking still needed?
 
-Yes on qwen2.5:32b, as of 2026-08-22. NOT re-measured since the 2026-09-09 move to
-qwen3.6:27b. Measured over the 889 word fixture with
+Yes on qwen2.5:32b, as of 2026-08-22. Measured over the 889 word fixture with
 `npm run test:density`, three chunks of 250 words:
 
 | model            | one call        | chunked         | time (one / chunked) |

@@ -7,9 +7,9 @@
  * running or the model is not pulled, so an offline checkout still passes.
  *
  *   npm run test:live
- *   SLATE_TEST_MODEL=qwen2.5:32b npm run test:live
+ *   SLATE_TEST_MODEL=mistral:latest npm run test:live
  *
- * The whole suite shares one generation, because a 27b model takes a while.
+ * The whole suite shares one generation, because a 32b model takes a while.
  */
 
 import { test, before } from "node:test";
@@ -18,12 +18,6 @@ import { generateShotBreakdown, type Shot } from "../src/ollama.ts";
 import { HOST, MODEL, fixture, liveSkipReason } from "./helpers.ts";
 
 /**
- * STALE AS OF 2026-09-09. The default model moved to qwen3.6:27b and these
- * thresholds have not been re-measured against it. Until they are, a failure here
- * is ambiguous: it may be a real regression, or it may be a stronger model
- * producing fewer, denser shots than qwen2.5 did. Read the generated breakdown
- * before believing the assertion, then re-calibrate and update this block.
- *
  * Thresholds below are calibrated against qwen2.5:32b, measured 2026-08-23 over
  * 12 runs of the scene fixture. Each one sits deliberately outside the observed
  * range so ordinary sampling variance at temperature 0.7 cannot trip it.
