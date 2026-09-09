@@ -10,3 +10,6 @@ main.js
 *.js.map
 *.tsbuildinfo
 dist/
+
+# Claude Code local state
+.claude/
