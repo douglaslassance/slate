@@ -34,31 +34,16 @@ import assert from "node:assert/strict";
 import { generateShotBreakdown, splitScriptIntoChunks } from "../src/ollama.ts";
 import { HOST, MODEL, fixture, wordCount, density, liveSkipReason } from "./helpers.ts";
 
-/** Chunk size used for the piece-mealed run, in words. */
 const CHUNK_SIZE = Number(process.env.SLATE_TEST_CHUNK_SIZE ?? 250);
 
-/**
- * How close a whole-script call has to get to the chunked result before the
- * extra round trips stop paying for themselves. At 0.9, a single call that
- * recovers 90% of the chunked shot density makes chunking not worth keeping.
- *
- * Measured 2026-08-22 on qwen2.5:32b: 0.78. Chunking still earns its keep, so
- * the assertion below is written to go red when that stops being true.
- */
 const CHUNKING_UNNECESSARY_AT = 0.9;
 
-/**
- * Shots per 100 words the chunked path must still reach. Measured 12.60 on
- * qwen2.5:32b, so this floor catches a model that starts summarising without
- * tripping on ordinary run-to-run variance.
- */
 const MIN_CHUNKED_DENSITY = 9;
 
 const enabled = process.env.SLATE_TEST_DENSITY === "1";
 
 let skip: string | false = false;
 
-/** Everything the assertions need, measured once because each run is minutes long. */
 let measured: {
 	wholeShots: number;
 	wholeDensity: number;
@@ -67,7 +52,6 @@ let measured: {
 	chunkedDensity: number;
 } | null = null;
 
-/** Run the callback while collecting anything generateShotBreakdown warns about. */
 async function withWarnings<T>(fn: () => Promise<T>): Promise<{ result: T; warnings: string[] }> {
 	const warnings: string[] = [];
 	const original = console.warn;
@@ -95,13 +79,11 @@ before(async () => {
 	const script = fixture("script.fountain");
 	const words = wordCount(script);
 
-	// Single call: the entire script in one request.
 	const wholeStart = Date.now();
 	const whole = await withWarnings(() => generateShotBreakdown(HOST, MODEL, script));
 	const wholeSeconds = (Date.now() - wholeStart) / 1000;
 	const wholeDensity = density(whole.result.length, script);
 
-	// Piece-mealed: the same script split at scene boundaries.
 	const chunks = splitScriptIntoChunks(script, CHUNK_SIZE);
 	const chunkedStart = Date.now();
 	let chunkedShots = 0;
@@ -155,9 +137,6 @@ test("chunking still earns its extra round trips", (t) => {
 	const m = measured!;
 	const ratio = m.wholeDensity / m.chunkedDensity;
 
-	// This is the one that should go red on good news. When a future model
-	// closes the gap, the split in splitScriptIntoChunks stops buying anything
-	// and the breakdown can go back to a single call per script.
 	assert.ok(
 		ratio < CHUNKING_UNNECESSARY_AT,
 		`${MODEL} now recovers ${(ratio * 100).toFixed(0)}% of the chunked shot density in a single ` +

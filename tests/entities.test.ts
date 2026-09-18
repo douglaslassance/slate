@@ -21,7 +21,6 @@ test("speakers come off the character cues", () => {
 });
 
 test("a character introduced in caps but never speaking is still found", () => {
-	// The case that breaks a cue-only roster: a wordless script.
 	const src = "INT. TOILETTES - JOUR\n\nEntre le modele du tableau. LE ROI KAGI, quarante ans.";
 	assert.deepEqual(roster(src), ["LE ROI KAGI"]);
 });
@@ -32,7 +31,6 @@ test("screen direction is not mistaken for a character", () => {
 });
 
 test("a fully uppercase line is a mini slug, not an introduction", () => {
-	// "CONTRE CHAMP" on its own line is a secondary slugline.
 	const src = "INT. DINER - NIGHT\n\nCONTRE CHAMP\n\nLe roi plonge la main.";
 	assert.deepEqual(roster(src), []);
 });
@@ -53,9 +51,6 @@ test("a name is listed once however often it appears", () => {
 });
 
 test("only capitalised mentions link, because that is what caps mean", () => {
-	// A screenplay capitalises a name when it means the character. Matching
-	// case insensitively turned "un homme qui va couper un ruban" into a link
-	// to the man in the spacesuit, which is the whole reason for this rule.
 	const src = "INT. PALAIS - JOUR\n\nUn HOMME entre.\n\nLe roi monte avec la gravité d'un homme.";
 	const script = parseFountain(src);
 	const mentions = findMentions(script, ["HOMME"]);
@@ -64,14 +59,11 @@ test("only capitalised mentions link, because that is what caps mean", () => {
 });
 
 test("derived text still matches without regard to case", () => {
-	// Shot text comes back from the model as ordinary prose, where the caps
-	// convention does not hold, so the breakdown falls back to loose matching.
 	assert.deepEqual(namesIn("Mara stares at keni.", ["Mara", "Keni"]), ["Mara", "Keni"]);
 	assert.deepEqual(namesIn("Mara stares at keni.", ["Mara", "Keni"], true), ["Mara"]);
 });
 
 test("a partial word never matches", () => {
-	// "le roi" alone must not become a link just because "LE ROI KAGI" is known.
 	const src = "INT. PALAIS - JOUR\n\nLE ROI KAGI entre.\n\nLe roi fait des allers retours.";
 	const script = parseFountain(src);
 	const mentions = findMentions(script, extractRoster(script));
@@ -97,11 +89,7 @@ test("the real fixture yields its speaking cast", () => {
 	assert.deepEqual(roster(fixture("scene.fountain")), ["MARA", "KENI"]);
 });
 
-// ── Liens dans le découpage ─────────────────────────────────────────────────
-
 test("names are wrapped in wikilinks on the way into the breakdown", () => {
-	// The script carries no brackets, but a breakdown is markdown and gains
-	// the graph, backlinks and hover preview from them.
 	assert.equal(
 		linkNames("Mara stares at Keni.", ["Mara", "Keni"]),
 		"[[Mara]] stares at [[Keni]]."
@@ -109,14 +97,11 @@ test("names are wrapped in wikilinks on the way into the breakdown", () => {
 });
 
 test("the casing written in the prose is kept inside the link", () => {
-	// Obsidian resolves both to the same note, and rewriting the prose to match
-	// the roster would change the sentence.
+	// Obsidian resolves both to the same note; rewriting would change the sentence.
 	assert.equal(linkNames("MARA slams the door.", ["Mara"]), "[[MARA]] slams the door.");
 });
 
 test("only whole words are linked", () => {
-	// The same rule the editor uses: "le roi" must not link inside "LE ROI KAGI",
-	// and a name must not be found in the middle of another word.
 	assert.equal(linkNames("Il maraude un peu.", ["Mara"]), "Il maraude un peu.");
 });
 

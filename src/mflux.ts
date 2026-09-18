@@ -9,25 +9,16 @@ const execFileAsync = promisify(execFile);
 
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".bmp"]);
 
-/** Maximum number of reference images the model can accept. */
 const MAX_STYLE_IMAGES = 4;
 
 export interface GeneratedImage {
 	shot: Shot;
-	/** Absolute path on disk to the generated PNG. */
 	filePath: string;
 }
 
-/**
- * Resolve style image paths from a file or folder.
- * Returns an empty array if the path is empty or doesn't exist.
- * Caps at MAX_STYLE_IMAGES.
- */
 async function resolveStyleImages(stylePath: string, vaultBasePath: string): Promise<string[]> {
 	if (!stylePath) return [];
 
-	// Resolve relative paths against the vault root.
-	// A path starting with "/" is treated as absolute; anything else is relative.
 	const resolvedPath = stylePath.startsWith("/") ? stylePath : join(vaultBasePath, stylePath);
 
 	let info;
@@ -57,50 +48,26 @@ async function resolveStyleImages(stylePath: string, vaultBasePath: string): Pro
 	return [];
 }
 
-/** Weight file suffixes. A reference ending in one of these names a file, not a Hub repo. */
 const WEIGHT_EXTENSIONS = [".safetensors", ".bin", ".pt", ".ckpt"];
 
-/**
- * Resolve a single LoRA reference into something the mflux CLI understands.
- *
- * `--lora-paths` accepts three forms: local files, Hugging Face repos
- * (`org/model`), and the collection form (`org/model:file.safetensors`). Hub
- * repos are downloaded on first use, so a reference beats a local path for
- * anything published.
- *
- * The forms are told apart by shape rather than by looking for a dot, because
- * Hub repo names contain dots all the time (artificialguybr/StudioGhibli.Redmond)
- * and the collection form always does.
- */
 export function resolveLoraReference(reference: string, vaultBasePath: string): string {
 	const ref = reference.trim();
 
-	// Absolute local path.
 	if (ref.startsWith("/")) return ref;
 
-	// Already a URL. mflux may reject it, but a clear error beats mangling it
-	// into a vault path that cannot exist.
 	if (/^https?:\/\//.test(ref)) return ref;
 
-	// Hugging Face collection form: org/model:file.safetensors.
 	if (ref.includes(":")) return ref;
 
-	// Names a weight file, so it is a local path relative to the vault root.
 	if (WEIGHT_EXTENSIONS.some((ext) => ref.toLowerCase().endsWith(ext))) {
 		return join(vaultBasePath, ref);
 	}
 
-	// Hugging Face repo ID: exactly one slash and no file suffix.
 	if (/^[^/\s]+\/[^/\s]+$/.test(ref)) return ref;
 
-	// Anything else is a vault relative path.
 	return join(vaultBasePath, ref);
 }
 
-/**
- * Resolve every configured LoRA and return parallel paths/scales arrays ready
- * to pass to the mflux CLI.
- */
 function resolveLoraArgs(settings: SlateSettings, vaultBasePath: string): { paths: string[]; scales: number[] } {
 	const entries = settings.mfluxLoras.filter((l) => l.path.trim());
 	return {
@@ -109,11 +76,6 @@ function resolveLoraArgs(settings: SlateSettings, vaultBasePath: string): { path
 	};
 }
 
-/**
- * Build the mflux CLI argument string for a single shot.
- * When style images are provided, uses mflux-generate-flux2-edit with --image-paths.
- * Otherwise uses mflux-generate-flux2 for plain text-to-image generation.
- */
 function buildCommand(
 	executable: string,
 	settings: SlateSettings,
@@ -141,7 +103,6 @@ function buildCommand(
 	}
 
 	if (hasStyleImages) {
-		// --image-paths accepts multiple space-separated paths
 		args.push(["--image-paths", styleImages.map(shellEscape).join(" ")]);
 	}
 
@@ -162,9 +123,6 @@ function shellEscape(value: string): string {
 	return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-/**
- * Resolve the full path of mflux-generate-flux2 via a login shell.
- */
 async function resolveMfluxExecutable(override: string): Promise<string> {
 	if (override) return override;
 
@@ -176,17 +134,12 @@ async function resolveMfluxExecutable(override: string): Promise<string> {
 		const resolved = which.trim();
 		console.log("[Slate] Resolved mflux-generate-flux2:", resolved);
 		return resolved || "mflux-generate-flux2";
-		// mflux-generate-flux2-edit is resolved by replacing the binary name at command build time.
 	} catch (err) {
 		console.warn("[Slate] Could not resolve mflux-generate-flux2 via login shell:", err);
 		return "mflux-generate-flux2";
 	}
 }
 
-/**
- * Generate storyboard images for a list of shots using mflux.
- * Runs through a login shell so the full user PATH is available.
- */
 export async function generateStoryboardImages(
 	shots: Shot[],
 	outputDir: string,

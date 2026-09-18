@@ -2,17 +2,14 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import type SlatePlugin from "./main";
 
 export interface SlateSettings {
-	// ── Fountain ───────────────────────────────────────────────────────────────
 	formatFountainOnSave: boolean;
 
-	// ── Shot Breakdown ─────────────────────────────────────────────────────────
 	ollamaHost: string;
 	breakdownLanguage: string;
 	breakdownCustomInstructions: string;
 	breakdownOutputFolder: string;
 	breakdownChunkSize: number;
 
-	// ── Storyboard ─────────────────────────────────────────────────────────────
 	mfluxExecutable: string;
 	storyboardImageName: string;
 	mfluxStyleImagePath: string;
@@ -71,7 +68,6 @@ export class SlateSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		/** Make a Setting's control area expand full-width below its description. */
 		const fullWidth = (s: Setting): Setting => {
 			s.settingEl.style.flexDirection = "column";
 			s.settingEl.style.alignItems = "stretch";
@@ -79,7 +75,6 @@ export class SlateSettingTab extends PluginSettingTab {
 			return s;
 		};
 
-		// ── Fountain ────────────────────────────────────────────────────────────
 		containerEl.createEl("h2", { text: "Fountain integration" });
 
 		new Setting(containerEl)
@@ -96,7 +91,6 @@ export class SlateSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// ── Shot Breakdown ──────────────────────────────────────────────────────
 		containerEl.createEl("h2", { text: "Shot breakdown" });
 
 		new Setting(containerEl)
@@ -196,7 +190,6 @@ export class SlateSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// ── Storyboard ──────────────────────────────────────────────────────────
 		containerEl.createEl("h2", { text: "Storyboard" });
 
 		new Setting(containerEl)
@@ -345,7 +338,6 @@ export class SlateSettingTab extends PluginSettingTab {
 								renderLoraList();
 							})
 					);
-				// Hide the empty info area so controls span the full row width.
 				row.infoEl.style.display = "none";
 				row.controlEl.style.flexGrow = "1";
 			});

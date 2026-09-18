@@ -29,7 +29,6 @@ import { buildVocabulary, rankByQuery, SCENE_PREFIXES, type Vocabulary } from ".
 
 const FOUNTAIN_EXTENSION = "fountain";
 
-/** Matches a line that has already committed to being a scene heading. */
 const HEADING_START_RE = /^\s*(?:\.|(?:INT|EXT|EST|I\/E|INT\.?\/EXT)[.\s])/i;
 
 type SuggestionKind = "prefix" | "character" | "location" | "time" | "transition";
@@ -50,26 +49,11 @@ const KIND_LABEL: Record<SuggestionKind, string> = {
 export class FountainSuggest extends EditorSuggest<Suggestion> {
 	private cache: { source: string; vocab: Vocabulary } | null = null;
 	private kinds: SuggestionKind[] = [];
-	/**
-	 * The editor state produced by the last completion.
-	 *
-	 * Accepting a suggestion leaves the line holding exactly the completed
-	 * word, which is still a valid trigger, so the popover reopens on the one
-	 * match that was just inserted. Declining that single state breaks the
-	 * loop without suppressing anything the writer actually types next.
-	 */
 	private justCompleted: { line: number; ch: number; text: string } | null = null;
 
 	constructor(app: App) {
 		super(app);
 
-		// Enter and click accept a suggestion by default, but Tab does not, and
-		// Tab is what a writer reaches for. The scope is only live while the
-		// popover is open, so this never interferes with Tab anywhere else.
-		//
-		// The suggestion container is internal, so the handler declines rather
-		// than throwing if the shape ever changes, leaving Tab to do whatever
-		// it would normally have done.
 		this.scope.register([], "Tab", (event) => {
 			if (event.isComposing) return true;
 			const container = (this as unknown as { suggestions?: { useSelectedItem?: (e: KeyboardEvent) => void } })
@@ -107,19 +91,13 @@ export class FountainSuggest extends EditorSuggest<Suggestion> {
 			query: before.slice(ch),
 		});
 
-		// A scene heading is filled in three stages, and each stage leaves the
-		// line ending in a separator, so trailing space here is expected rather
-		// than a reason to stop suggesting.
 		if (HEADING_START_RE.test(before)) {
-			// Stage three: time of day, after the last " - ".
 			const dash = before.lastIndexOf(" - ");
 			if (dash !== -1) {
 				this.kinds = ["time"];
 				return at(dash + 3);
 			}
 
-			// Stage two: location, everything after the prefix. The query may be
-			// empty, which is the moment right after the prefix was completed.
 			const prefix = before.match(/^\s*(?:\.|(?:INT|EXT|EST|I\/E|INT\.?\/EXT)[.\s]\s*)/i);
 			if (prefix && before.length >= prefix[0].length) {
 				this.kinds = ["location"];
@@ -128,12 +106,8 @@ export class FountainSuggest extends EditorSuggest<Suggestion> {
 			return null;
 		}
 
-		// Anywhere else, a trailing space means the writer has moved past the
-		// word and is not asking for a completion.
 		if (before.trimEnd().length !== before.length) return null;
 
-		// Stage one, and the head of any other element: a scene prefix, a
-		// character, or a transition are all plausible, so the query decides.
 		const indent = before.length - before.trimStart().length;
 		const typed = before.slice(indent);
 		if (typed.length < 1) return null;
@@ -179,10 +153,6 @@ export class FountainSuggest extends EditorSuggest<Suggestion> {
 		const context = this.context;
 		if (!context) return;
 
-		// A prefix and a location are both mid-way through a scene heading, so
-		// each one appends the separator the next stage needs and deliberately
-		// leaves the popover free to reopen on that stage. Everything else
-		// finishes the line.
 		const chains = value.kind === "prefix" || value.kind === "location";
 		const rest = context.editor.getLine(context.start.line).slice(context.end.ch);
 		const suffix =
@@ -199,8 +169,6 @@ export class FountainSuggest extends EditorSuggest<Suggestion> {
 		context.editor.setCursor({ line, ch });
 
 		if (chains) {
-			// The edit above already re-ran onTrigger, which opened the next
-			// stage. Closing here would hide it until the next keystroke.
 			return;
 		}
 

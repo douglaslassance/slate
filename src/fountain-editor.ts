@@ -25,7 +25,6 @@ import {
 import { type Element, parseFountain } from "./fountain";
 import { extractRoster, findMentions } from "./fountain-entities";
 
-/** Files with this extension get screenplay formatting. */
 export const FOUNTAIN_EXTENSION = "fountain";
 
 const lineDeco = (kind: string) =>
@@ -33,7 +32,6 @@ const lineDeco = (kind: string) =>
 
 const NOTE_DECO = Decoration.mark({ class: "slate-fountain-note" });
 
-/** Hides a marker without removing it from the document. */
 const HIDE_DECO = Decoration.replace({});
 
 /**
@@ -97,16 +95,8 @@ function buildDecorations(view: EditorView, app: App): DecorationSet {
 
 	const script = parseFountain(view.state.doc.toString());
 
-	// Line decorations, inline marks, and notes come from three separate
-	// passes, so they are collected and sorted rather than appended blind.
-	// RangeSetBuilder requires ranges in start order, and a line decoration
-	// has to precede any mark that begins at the same position.
 	const pending: { from: number; to: number; isLine: boolean; deco: Decoration }[] = [];
 
-	// The title page is not an element, so it would otherwise be the one part
-	// of a screenplay left in the theme's proportional font.
-	// The count steps past the blank separator, so it can land one beyond the
-	// end in a file that is nothing but a title page. doc.line throws on that.
 	const titleLines = Math.min(script.titlePageLines, view.state.doc.lines);
 	for (let line = 0; line < titleLines; line++) {
 		const at = view.state.doc.line(line + 1);
@@ -119,7 +109,6 @@ function buildDecorations(view: EditorView, app: App): DecorationSet {
 	}
 
 	for (const el of script.elements) {
-		// The one variant that needs its own styling.
 		const cls = el.kind === "character" && el.dual ? "character-dual" : el.kind;
 		pending.push({ from: el.start, to: el.start, isLine: true, deco: lineDeco(cls) });
 		for (const span of el.emphasis ?? []) {
@@ -128,15 +117,12 @@ function buildDecorations(view: EditorView, app: App): DecorationSet {
 		}
 	}
 
-	// Taken from the document rather than per element, because a note on its
-	// own line is removed from the parse but still needs dimming.
+	// A note on its own line is removed from the parse but still needs dimming.
 	for (const note of script.notes) {
 		pending.push({ from: note.start, to: note.end, isLine: false, deco: NOTE_DECO });
 	}
 
-	// Live preview hides syntax; source mode shows it. And as everywhere in
-	// Obsidian, the line under the cursor reveals its markers so it stays
-	// editable.
+	// Obsidian convention: the line under the cursor reveals its markers.
 	if (view.state.field(editorLivePreviewField, false)) {
 		const selection = view.state.selection.main;
 		for (const el of script.elements) {
@@ -149,9 +135,6 @@ function buildDecorations(view: EditorView, app: App): DecorationSet {
 		}
 	}
 
-	// Only names that actually have a note are marked. A character with no
-	// note stays plain text rather than becoming a dead link, which matters
-	// because most proper nouns in a script will never get one.
 	const sourcePath = view.state.field(editorInfoField, false)?.file?.path ?? "";
 	const resolved = extractRoster(script).filter((name) =>
 		Boolean(app.metadataCache.getFirstLinkpathDest(name, sourcePath))
@@ -172,7 +155,6 @@ function buildDecorations(view: EditorView, app: App): DecorationSet {
 	return builder.finish();
 }
 
-/** Path of the file this editor is showing, or null when there is none. */
 function filePath(view: EditorView): string | null {
 	return view.state.field(editorInfoField, false)?.file?.path ?? null;
 }
@@ -198,9 +180,6 @@ export function fountainEditorExtension(app: App): Extension {
 			}
 
 			update(update: ViewUpdate) {
-				// Decorations already span the whole document, so scrolling
-				// needs no work. Only an edit, or the same editor being handed
-				// a different file, can invalidate them.
 				const path = filePath(update.view);
 				if (update.docChanged || update.selectionSet || path !== this.path) {
 					this.path = path;
@@ -212,9 +191,6 @@ export function fountainEditorExtension(app: App): Extension {
 	);
 
 	const clicks = EditorView.domEventHandlers({
-		// mousedown rather than click: CodeMirror places the caret on mousedown,
-		// so a handler on click arrives too late to stop it and leaves a stray
-		// cursor behind before navigating.
 		mousedown(event, view) {
 			if (event.button !== 0) return false;
 
@@ -226,8 +202,7 @@ export function fountainEditorExtension(app: App): Extension {
 
 			const sourcePath = view.state.field(editorInfoField, false)?.file?.path ?? "";
 			event.preventDefault();
-			// Plain click follows the name, and the platform modifier opens it in a
-			// new tab, which is what every other link in Obsidian does.
+			// The platform modifier opens in a new tab, as every other Obsidian link does.
 			void app.workspace.openLinkText(name, sourcePath, event.metaKey || event.ctrlKey);
 			return true;
 		},

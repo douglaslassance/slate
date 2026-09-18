@@ -43,7 +43,6 @@ test("character cues start a dialogue block", () => {
 });
 
 test("an uppercase line with no dialogue under it stays action", () => {
-	// A blank line after the cue means there is nothing to speak, so it is action.
 	const src = "INT. DINER - NIGHT\n\nMARA WALKS IN\n\nShe sits.";
 	assert.equal(find(src, "character").length, 0);
 });
@@ -65,7 +64,6 @@ test("parentheticals only count inside a dialogue block", () => {
 test("transitions need uppercase, a TO: ending, and blank lines around them", () => {
 	const src = "He leaves.\n\nCUT TO:\n\nINT. STREET - DAY";
 	assert.equal(find(src, "transition").length, 1);
-	// The same words inside a paragraph are just action.
 	assert.equal(find("He said CUT TO: and left.", "transition").length, 0);
 });
 
@@ -111,7 +109,6 @@ test("locations come from scene headings with the time of day dropped", () => {
 });
 
 test("names drop note brackets so they can be looked up in the vault", () => {
-	// Entity resolution matches these against note titles, so [[...]] has to go.
 	const src = "INT. [[Rialto Diner]] - NIGHT\n\nA beat.\n\nMARA [[beat]]\nHello.";
 	const script = parseFountain(src);
 	assert.deepEqual(script.locations, ["Rialto Diner"]);
@@ -119,8 +116,7 @@ test("names drop note brackets so they can be looked up in the vault", () => {
 });
 
 test("a line holding only a note is removed and does not break dialogue", () => {
-	// The spec removes such a line in parsing, along with the blank lines
-	// around it, so the dialogue block either side stays one block.
+	// The spec removes the line and the blank lines around it, keeping one block.
 	const src = "MARA\nYou said midnight.\n\n[[check this beat]]\n\nHe shrugs.";
 	const script = parseFountain(src);
 	assert.ok(!script.elements.some((e) => e.text.includes("check this beat")));
@@ -128,17 +124,12 @@ test("a line holding only a note is removed and does not break dialogue", () => 
 });
 
 test("the title page reports how many lines it covers", () => {
-	// It is deliberately absent from elements, so this is the only handle a
-	// renderer has on it.
 	const src = "Title: The Rialto\nAuthor: D. Lassance\n\nINT. DINER - NIGHT\n\nRain.";
 	assert.equal(parseFountain(src).titlePageLines, 3);
-	// No title page means no lines to style.
 	assert.equal(parseFountain("INT. DINER - NIGHT\n\nRain.").titlePageLines, 0);
 });
 
 test("a file that is only a title page does not overrun the document", () => {
-	// The count steps past a blank separator that is not there, which would
-	// send a renderer one line past the end.
 	const script = parseFountain("Title: The Rialto\nAuthor: D. Lassance");
 	assert.ok(script.titlePageLines >= 2);
 	assert.equal(script.elements.length, 0);
@@ -162,14 +153,12 @@ test("toPlainScript removes notes and boneyard but keeps the prose", () => {
 });
 
 test("a scene heading needs a blank line on both sides", () => {
-	// The spec requires one either side, which is what separates a heading
-	// from an action line that merely opens with INT.
+	// The spec requires a blank line either side, separating a heading from action.
 	assert.equal(find("INT. DINER - NIGHT\nRain falls.", "scene-heading").length, 0);
 	assert.equal(find("INT. DINER - NIGHT\n\nRain falls.", "scene-heading").length, 1);
 });
 
 test("forcing a heading skips the blank line requirement", () => {
-	// Forcing is an explicit instruction, so it is honoured on its own.
 	assert.equal(find(".BLACK\nSilence falls.", "scene-heading").length, 1);
 });
 
@@ -177,7 +166,6 @@ test("scene numbers are read off the end of a heading", () => {
 	const src = "INT. DINER - NIGHT #1A#\n\nRain falls.";
 	const [heading] = parseFountain(src).elements;
 	assert.equal(heading.sceneNumber, "1A");
-	// The number is not part of the location.
 	assert.deepEqual(parseFountain(src).locations, ["DINER"]);
 });
 
@@ -189,8 +177,7 @@ test("all the spec scene heading prefixes are recognised", () => {
 });
 
 test("only lines ending in TO: are transitions", () => {
-	// The spec's whole rule. "FADE OUT." ends in a period, so it is action,
-	// and the way to make it a transition is the spec's own ">" prefix.
+	// "FADE OUT." ends in a period so it is action; ">" is the spec transition prefix.
 	for (const t of ["CUT TO:", "DISSOLVE TO:", "SMASH CUT TO:"]) {
 		const src = `A beat.\n\n${t}\n\nAnother beat.`;
 		assert.equal(find(src, "transition").length, 1, `${t} not a transition`);
@@ -247,8 +234,7 @@ test("a genuinely blank line still ends dialogue", () => {
 });
 
 test("a curly brace block is action, because the spec has no such syntax", () => {
-	// Slugline appends one of these to every file it saves. The spec's way to
-	// exclude content is the boneyard, so that is what has to be used.
+	// Slugline appends this to every save; the boneyard is the spec way to exclude it.
 	const src = "Rain falls.\n\n{{Slugline Document Settings}}";
 	assert.equal(parseFountain(src).elements.filter((e) => e.kind === "action").length, 2);
 	const boneyarded = "Rain falls.\n\n/*{{Slugline Document Settings}}*/";
@@ -267,7 +253,5 @@ test("the scene fixture parses into the elements the breakdown assumes", () => {
 	assert.deepEqual(script.characters, ["MARA", "KENI"]);
 	assert.deepEqual(script.locations, ["Rialto Diner"]);
 	assert.ok(script.elements.some((e) => e.kind === "dialogue"));
-	// The fixture carries no brackets: a script declares no links, and the
-	// names are recognised in the prose afterwards instead.
 	assert.equal(script.notes.length, 0);
 });

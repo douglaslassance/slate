@@ -17,23 +17,6 @@ import assert from "node:assert/strict";
 import { generateShotBreakdown, type Shot } from "../src/ollama.ts";
 import { HOST, MODEL, fixture, liveSkipReason } from "./helpers.ts";
 
-/**
- * Thresholds below are calibrated against qwen2.5:32b, measured 2026-08-23 over
- * 12 runs of the scene fixture. Each one sits deliberately outside the observed
- * range so ordinary sampling variance at temperature 0.7 cannot trip it.
- *
- *   shots              16 to 20
- *   shots with dialog  4 every run (the fixture has exactly four spoken lines)
- *   camera format      1.00 every run
- *   distinct sizes     3 to 7
- *   thin descriptions  0.00 to 0.06
- *
- * Separating one model from another is the density benchmark's job, not this
- * suite's. A short scene does not discriminate much: codestral scored 14 here.
- * These assertions exist to catch the shipped model degrading.
- */
-
-/** Observed 16 to 20. A summarising model lands far below this. */
 const MIN_SHOTS = 14;
 
 /**
@@ -45,7 +28,6 @@ const MIN_SHOTS = 14;
  */
 const MIN_SHOTS_WITH_DIALOG = 3;
 
-/** Every spoken line in the scene fixture, lowercased for matching. */
 const SPOKEN_LINES = [
 	"you said midnight",
 	"i said if i could",
@@ -53,16 +35,10 @@ const SPOKEN_LINES = [
 	"does it matter",
 ];
 
-/** Observed 1.00. */
 const MIN_CAMERA_FORMAT_RATIO = 0.9;
 
-/**
- * Observed 3 to 7, so the floor is 2 rather than 3. Catching a model that uses
- * one framing for everything is the point, and 3 sat on the observed minimum.
- */
 const MIN_DISTINCT_SHOT_SIZES = 2;
 
-/** Observed at most 0.06. */
 const MAX_THIN_DESCRIPTION_RATIO = 0.15;
 
 const SHOT_SIZES = [
@@ -70,7 +46,6 @@ const SHOT_SIZES = [
 	"Medium Close-Up", "Close-Up", "Extreme Close-Up", "Insert",
 ];
 
-/** Abbreviations the prompt forbids in the camera field. */
 const ACRONYMS = ["ECU", "CU", "MCU", "MS", "MWS", "WS", "EWS", "OTS", "POV"];
 
 let skip: string | false = false;
@@ -149,8 +124,7 @@ test("coverage varies the shot size", (t) => {
 });
 
 test("names from the source survive into the breakdown", (t) => {
-	// A Fountain script declares no links, so the names have to come through as
-	// plain prose for entity resolution to recognise them afterwards.
+	// Fountain declares no links, so names must arrive as plain prose for resolution.
 	if (skip) return t.skip(skip);
 	const text = shots
 		.flatMap((s) => [s.scene, s.action, s.description, s.dialog ?? ""])
@@ -165,11 +139,6 @@ test("spoken lines are captured as dialog", (t) => {
 	const withDialog = shots.filter((s) => s.dialog && s.dialog.trim().length > 0);
 	const spoken = withDialog.map((s) => s.dialog!).join(" ").toLowerCase();
 
-	// Content is the assertion that matters. buildShotPrompt reads shot.dialog to
-	// add the on-screen text instruction, so a line that never reaches a dialog
-	// field is lost to the storyboard even though it sits in the action text.
-	// Checking content rather than counting shots tolerates the model folding
-	// two lines into one setup, which is a legitimate coverage choice.
 	const missing = SPOKEN_LINES.filter((line) => !spoken.includes(line));
 	assert.deepEqual(
 		missing,

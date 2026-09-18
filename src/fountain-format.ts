@@ -17,11 +17,8 @@
  * of layout, so it belongs behind its own explicit command.
  */
 
-// Extension included so Node's test runner can load this module directly.
-// esbuild resolves it the same either way.
 import { parseFountain } from "./fountain.ts";
 
-/** Uppercase text while leaving `[[note]]` contents alone. */
 function upperOutsideNotes(text: string): string {
 	return text
 		.split(/(\[\[[\s\S]*?\]\])/)
@@ -29,23 +26,10 @@ function upperOutsideNotes(text: string): string {
 		.join("");
 }
 
-/**
- * Normalise the dashes in a scene heading.
- *
- * Doubled dashes and en or em dashes all become the single hyphen the format
- * expects. Single hyphens are left alone, because they appear inside real
- * location names.
- */
 function normalizeHeadingDashes(text: string): string {
 	return text.replace(/\s*[–—]\s*/g, " - ").replace(/\s*--+\s*/g, " - ");
 }
 
-/**
- * Line indices that must pass through untouched.
- *
- * Boneyard, curly blocks, and multi-line notes are verbatim regions, and the
- * title page has its own layout rules.
- */
 function protectedLines(source: string, lines: string[]): Set<number> {
 	const offsets: number[] = [];
 	let running = 0;
@@ -70,12 +54,10 @@ function protectedLines(source: string, lines: string[]): Set<number> {
 		for (const m of source.matchAll(re)) {
 			const from = lineAt(m.index ?? 0);
 			const to = lineAt((m.index ?? 0) + m[0].length - 1);
-			// A span inside one line does not protect that whole line.
 			if (to > from) for (let i = from; i <= to; i++) out.add(i);
 		}
 	}
 
-	// Title page: the leading key/value block, up to the first blank line.
 	if (/^[A-Za-z ]+:/.test(lines[0] ?? "")) {
 		for (let i = 0; i < lines.length && lines[i].trim() !== ""; i++) out.add(i);
 	}
@@ -94,16 +76,12 @@ export function formatFountain(source: string): string {
 	const script = parseFountain(normalized);
 	const skip = protectedLines(normalized, lines);
 
-	// Element kind by line, so each line is only touched when the parser has
-	// positively identified it.
 	const kindByLine = new Map<number, string>();
 	for (const el of script.elements) kindByLine.set(el.line, el.kind);
 
 	const formatted = lines.map((line, i) => {
 		if (skip.has(i)) return line;
 
-		// A whitespace-only line either carries meaning at two spaces, or is
-		// just blank. Anything else loses its trailing run.
 		if (line.trim() === "") return line.length >= 2 ? "  " : "";
 
 		let out = line.replace(/[ \t]+$/, "");
@@ -118,20 +96,7 @@ export function formatFountain(source: string): string {
 		return out;
 	});
 
-	// Rebuild the spacing rather than merely collapsing it. Fountain's own
-	// layout is exactly one blank line between elements and none inside a
-	// speech, and the parser knows which is which, so the formatter can be
-	// opinionated here instead of preserving whatever was typed.
-	//
-	// This is safe only because it is driven by the parse and guarded by a test
-	// asserting the sequence of element kinds is identical afterwards. Blank
-	// lines are semantic in Fountain: one in the wrong place turns a cue into
-	// action.
-	// Lines that were already adjacent stay adjacent. Adjacency is meaningful:
-	// consecutive action lines are one paragraph, and consecutive dialogue
-	// lines are one speech. Inserting a blank between them would change how the
-	// script prints even though the element kinds stay the same, which is the
-	// one failure the safety test cannot see.
+	// Fountain layout is one blank line between elements and none inside a speech.
 	const out: string[] = [];
 	let prevLine: number | null = null;
 
@@ -142,7 +107,6 @@ export function formatFountain(source: string): string {
 	};
 
 	for (let i = 0; i < formatted.length; i++) {
-		// Verbatim regions keep their own shape, including internal spacing.
 		if (skip.has(i)) {
 			const start = i;
 			while (i < formatted.length && skip.has(i)) i++;
@@ -153,8 +117,6 @@ export function formatFountain(source: string): string {
 			continue;
 		}
 
-		// A line the parser kept nothing for is spacing, and spacing is
-		// regenerated rather than carried over.
 		if (!kindByLine.has(i)) continue;
 
 		separate(i);
@@ -162,7 +124,6 @@ export function formatFountain(source: string): string {
 		prevLine = i;
 	}
 
-	// Exactly one trailing newline.
 	return `${out.join("\n").replace(/\n+$/, "")}\n`;
 }
 
@@ -173,21 +134,6 @@ export interface Edit {
 	text: string;
 }
 
-/**
- * The smallest single replacement that turns `before` into `after`.
- *
- * Formatting a whole document and writing it back with setValue tears the
- * editor down and rebuilds it, which loses the scroll position, the selection,
- * and the undo history, and makes the view jump. Narrowing the change to the
- * span that actually differs lets the editor apply it as an ordinary edit and
- * map the cursor through it, so nothing moves that did not have to.
- *
- * The common prefix and suffix are trimmed at character level, which is enough
- * because the formatter's edits cluster: a save after typing in one scene
- * touches that scene and nothing else.
- *
- * Returns null when the two texts are identical.
- */
 export function minimalEdit(before: string, after: string): Edit | null {
 	if (before === after) return null;
 

@@ -1,17 +1,10 @@
-// Extension included so Node's test runner can load this module directly.
 import { parseFountain } from "./fountain.ts";
 export interface Shot {
-	/** Sequential shot number within the scene. */
 	number: number;
-	/** Scene or sequence label (e.g. "EXT. DESERT - DAY"). */
 	scene: string;
-	/** Shot type and camera movement combined (e.g. "Close-Up - Static"). */
 	camera: string;
-	/** Narrative action: what is happening in the shot. */
 	action: string;
-	/** Visual details worth noting: lighting, colors, props, atmosphere, composition. */
 	description: string;
-	/** Dialogue or spoken lines that occur during this shot (optional). */
 	dialog?: string;
 }
 
@@ -71,20 +64,8 @@ REMINDER: every spoken line in the source must appear in a "dialog" field. If an
 
 Return ONLY the raw JSON array. No markdown fences, no commentary, no preamble.`;
 
-/**
- * The model Slate runs on. Deliberately not a setting.
- *
- * The system prompt is tuned around this model's willingness to split one
- * action per shot, so swapping it silently changes the output quality. The
- * `model` parameter on the functions below exists so the test suites can
- * measure a candidate before it ever becomes the default.
- */
 export const MODEL = "qwen2.5:32b";
 
-/**
- * Ensure a model is available locally, pulling it from the registry if not.
- * Reports download progress via onProgress.
- */
 export async function ensureModel(
 	host: string,
 	model: string,
@@ -92,7 +73,6 @@ export async function ensureModel(
 ): Promise<void> {
 	const base = host.replace(/\/$/, "");
 
-	// Check installed models.
 	let installed = false;
 	try {
 		const res = await fetch(`${base}/api/tags`);
@@ -103,13 +83,11 @@ export async function ensureModel(
 			);
 		}
 	} catch {
-		// If we can't reach the tags endpoint, proceed and let the chat call fail with a clear error.
 		return;
 	}
 
 	if (installed) return;
 
-	// Pull the model with streaming progress.
 	onProgress?.(`Pulling ${model} — this may take a few minutes…`);
 
 	let pullRes: Response;
@@ -156,27 +134,12 @@ export async function ensureModel(
 	}
 }
 
-/**
- * Estimate the number of screenplay pages in a block of text.
- * Standard screenplay: ~250 words per page.
- */
 export function estimatePageCount(text: string): number {
 	const words = text.trim().split(/\s+/).length;
 	return Math.max(0.5, words / 250);
 }
 
 // Scene headings in Fountain format (INT./EXT.) and markdown heading format (## INT. / ## EXT.).
-/**
- * Split a script into chunks at scene boundaries, each capped at
- * maxWordsPerChunk words. A boundary only ever lands on a scene heading, so no
- * scene is ever cut in half. Smaller chunks make the model split more
- * aggressively, which is measured by tests/density.test.ts.
- *
- * Boundaries come from the parse rather than a pattern. That means a forced
- * sub-slug like `.DERRIÈRE LE RIDEAU` is a boundary too, since it is a scene
- * heading as far as the format is concerned, and a line that merely opens with
- * "INT." inside a speech is not.
- */
 export function splitScriptIntoChunks(text: string, maxWordsPerChunk = 750): string[] {
 	const lines = text.split("\n");
 	const headings = new Set(
@@ -229,8 +192,6 @@ async function readShotStream(
 ): Promise<string> {
 	const reader = response.body?.getReader();
 
-	// No readable body (some environments buffer the whole response): fall back
-	// to reading it in one go.
 	if (!reader) {
 		const data = await response.json();
 		return data?.message?.content ?? "";
@@ -240,7 +201,6 @@ async function readShotStream(
 	let content = "";
 	let buffer = "";
 	let shots = 0;
-	// Enough tail to catch a marker split across two chunks.
 	let carry = "";
 
 	onProgress?.("Generating shots…");
@@ -269,8 +229,6 @@ async function readShotStream(
 				shots++;
 			}
 			carry = window.slice(-(SHOT_MARKER.length - 1));
-			// Only on change: the stream delivers thousands of token batches and
-			// each report repaints the notice.
 			if (shots !== before) onProgress?.(`Generating shots… ${shots} so far`);
 		}
 	}
@@ -307,19 +265,14 @@ JSON keys ("number", "scene", "camera", "action", "description", "dialog") stay 
 
 	const body = JSON.stringify({
 		model,
-		// Streamed so the notice can report progress during a generation that
-		// runs for minutes, and so no timeout fires while the model thinks.
 		stream: true,
 		messages: [
 			{ role: "system", content: systemPrompt },
 			{ role: "user", content: scriptText },
 		],
 		options: {
-			// Remove the default token cap so a long shot list is never silently truncated.
 			num_predict: -1,
-			// Large context window to handle long scripts and long outputs simultaneously.
 			num_ctx: 32768,
-			// Slightly higher temperature for more varied, less repetitive descriptions.
 			temperature: 0.7,
 		},
 	});
@@ -344,12 +297,8 @@ JSON keys ("number", "scene", "camera", "action", "description", "dialog") stay 
 
 	onProgress?.("Parsing shot breakdown…");
 
-	// Strip optional markdown code fences the model might add anyway.
-	// Replace curly/smart quotes — models emit these inside string values breaking JSON.parse.
-	// Also strip any "notes", "shotType", "cameraMovement", "visualDescription" lines the model
-	// may emit from old habits — only our current schema fields are wanted.
+	// Models emit smart quotes inside string values, breaking JSON.parse.
 	const unwantedKeys = /^[\s]*"(notes|shotType|cameraMovement|visualDescription)"\s*:/;
-	// Strip single-line JS comments the model sometimes adds (e.g. // Continue generating…)
 	const commentLine = /^\s*\/\/.*/;
 	let cleaned = content
 		.replace(/^```(?:json)?\s*/i, "")
@@ -361,7 +310,6 @@ JSON keys ("number", "scene", "camera", "action", "description", "dialog") stay 
 		.join("\n")
 		.trim();
 
-	// Recover from malformed arrays: missing opening bracket, missing closing bracket, or both.
 	if (!cleaned.startsWith("[")) {
 		cleaned = "[\n" + cleaned;
 		console.warn("[Slate] Response missing opening bracket — prepending [");
@@ -447,8 +395,6 @@ export async function convertToFountain(
 	const data = await response.json();
 	const content: string = data?.message?.content ?? "";
 
-	// Strip any accidental markdown fences the model may have added.
-	// Also remove any [[wikilink]] brackets the model failed to strip itself.
 	return content
 		.replace(/^```(?:fountain)?\s*/i, "")
 		.replace(/\s*```\s*$/, "")
@@ -523,4 +469,3 @@ export async function summarizeLinks(
 }
 
 const WIKILINK_RE = /\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g;
-
