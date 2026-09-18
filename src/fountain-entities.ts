@@ -19,12 +19,6 @@
 
 import type { Element, Script } from "./fountain.ts";
 
-/**
- * Uppercase words that are screenplay vocabulary rather than names.
- *
- * These appear in action lines exactly where an introduction would, so without
- * this list `INSERT` reads as a recurring character.
- */
 const SCREEN_DIRECTION = new Set([
 	"ANGLE",
 	"BACK TO SCENE",
@@ -71,33 +65,18 @@ const SCREEN_DIRECTION = new Set([
 	"ZOOM",
 ]);
 
-/** A name found in the script, with the range it occupies. */
 export interface Mention {
-	/** The roster name this mention belongs to. */
 	name: string;
 	start: number;
 	end: number;
 }
 
-/**
- * Runs of capitals inside a line. Accented capitals count, so French and
- * Spanish scripts work, and internal apostrophes and hyphens stay attached.
- */
 const CAPS_RUN_RE = /\p{Lu}[\p{Lu}\d'’-]*(?:\s+\p{Lu}[\p{Lu}\d'’-]*)*/gu;
 
-/** True when a line is entirely uppercase, which makes it a slug not a name. */
 function isAllCaps(line: string): boolean {
 	return line === line.toUpperCase();
 }
 
-/**
- * Drop single letter words from the ends of a caps run.
- *
- * A capitalised article glues itself to whatever follows, so "A MONTAGE of the
- * city" yields the run "A MONTAGE", which slips past a filter looking for
- * "MONTAGE". Real names do not start or end on a single letter, so trimming
- * them costs nothing.
- */
 function trimStrayInitials(run: string): string {
 	const words = run.split(/\s+/).filter(Boolean);
 	while (words.length > 0 && words[0].length === 1) words.shift();
@@ -105,19 +84,12 @@ function trimStrayInitials(run: string): string {
 	return words.join(" ");
 }
 
-/**
- * Names worth resolving against the vault, in order of first appearance.
- *
- * Whether a note actually exists is the caller's business. This only decides
- * what counts as a name.
- */
 export function extractRoster(script: Script): string[] {
 	const roster: string[] = [];
 	const seen = new Set<string>();
 
 	const add = (name: string) => {
 		const trimmed = trimStrayInitials(name.trim());
-		// One and two letter runs are initials and noise, not introductions.
 		if (trimmed.length < 3) return;
 		if (SCREEN_DIRECTION.has(trimmed.toUpperCase())) return;
 		const key = trimmed.toUpperCase();
@@ -126,8 +98,6 @@ export function extractRoster(script: Script): string[] {
 		roster.push(trimmed);
 	};
 
-	// Speakers first, so a character who both speaks and is introduced keeps
-	// the spelling used in the cue.
 	for (const name of script.characters) add(name);
 
 	for (const el of script.elements) {
@@ -140,33 +110,10 @@ export function extractRoster(script: Script): string[] {
 	return roster;
 }
 
-/** Escape a name for use inside a regular expression. */
 function escapeRe(text: string): string {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * Every mention of the given names in the script's prose.
- *
- * Matching is case sensitive, because a screenplay already says what it means:
- * a name in capitals is the character, the same word in lower case is the
- * word. That is what keeps `un homme qui va couper un ruban` from linking to
- * the man in the spacesuit. It is never fuzzy either: only the full roster
- * name matches, so `LE ROI` does not match inside `LE ROI KAGI`.
- */
-/**
- * A pattern matching any of `names` as a whole word.
- *
- * Longer names first, so `LE ROI KAGI` wins over `LE ROI` where both are on
- * the roster. The lookarounds are what keep `le roi` from matching inside
- * `LE ROI KAGI`, and what keep this from being a substring search.
- *
- * Case matters in a script and does not in derived text, which is why callers
- * choose. A screenplay capitalises a name when it means the character and
- * lower cases it when it means the word, so `un homme qui va couper un ruban`
- * is not the man in the spacesuit. Shot text comes back from the model as
- * ordinary prose, where that convention does not hold.
- */
 function namePattern(names: string[], caseSensitive: boolean): RegExp {
 	const ordered = [...names].sort((a, b) => b.length - a.length);
 	return new RegExp(
@@ -175,14 +122,6 @@ function namePattern(names: string[], caseSensitive: boolean): RegExp {
 	);
 }
 
-/**
- * Which of `names` appear in a block of prose, in roster order.
- *
- * Used to work out which characters and locations a shot features, now that
- * the script carries no brackets to declare it. The shot text comes back from
- * the model as plain prose, so the names have to be recognised rather than
- * read off.
- */
 export function namesIn(text: string, names: string[], caseSensitive = false): string[] {
 	if (names.length === 0 || !text) return [];
 
@@ -204,7 +143,6 @@ export function findMentions(script: Script, names: string[]): Mention[] {
 	const byUpper = new Map(names.map((n) => [n.toUpperCase(), n]));
 
 	for (const el of script.elements) {
-		// Structure lines are not prose, and a cue is already a name.
 		if (el.kind === "section" || el.kind === "synopsis" || el.kind === "page-break") continue;
 
 		for (const m of el.text.matchAll(pattern)) {
@@ -242,7 +180,6 @@ export const DEFAULT_TIMES = [
 	"CONTINUOUS",
 ];
 
-/** The time of day in a scene heading, which follows the last " - ". */
 function headingTime(text: string): string | null {
 	const dash = text.lastIndexOf(" - ");
 	if (dash === -1) return null;
@@ -250,14 +187,6 @@ function headingTime(text: string): string | null {
 	return time || null;
 }
 
-/**
- * What a script knows about its own vocabulary.
- *
- * A screenplay reuses the same dozen characters, handful of locations, and two
- * or three times of day throughout. Deriving all three from the script is what
- * lets completion work in a script that is not written in English: the French
- * script this was built against uses JOUR, NUIT, and CONTINU.
- */
 export interface Vocabulary {
 	characters: string[];
 	locations: string[];
@@ -279,18 +208,13 @@ export function buildVocabulary(script: Script): Vocabulary {
 			if (time) remember(times, time);
 			continue;
 		}
-		// Transitions already in the script, so the suggestion list matches the
-		// spec's own shape (a line ending in TO:) rather than a guessed list of
-		// which transitions exist.
+		// Matches the spec shape, a line ending in TO:, rather than a guessed list.
 		if (el.kind === "transition") {
 			const text = el.text.trim().replace(/^>\s*/, "");
 			if (text) remember(transitions, text);
 		}
 	}
 
-	// The script's own words come first, then the defaults it has not used.
-	// A French script therefore leads with JOUR and CONTINU, and still offers
-	// something useful on a page that has no scene headings yet.
 	for (const time of DEFAULT_TIMES) remember(times, time);
 
 	return {
@@ -301,18 +225,6 @@ export function buildVocabulary(script: Script): Vocabulary {
 	};
 }
 
-/**
- * Rank suggestions against what has been typed.
- *
- * Two tiers, and nothing looser. A name whose start matches comes first, then
- * a name where some word inside it starts with the query. Matching anywhere in
- * the string is too lax for a cast list: typing "IN" for a scene prefix
- * otherwise offers LE MÉDEC-IN ROYAL, which is noise at exactly the moment the
- * writer is going fast.
- *
- * Word starts still matter, because names here are mostly several words long
- * and reaching CHAMBELLAN by typing "CHAM" is the whole point.
- */
 export function rankByQuery<T extends { text: string }>(items: T[], query: string): T[] {
 	const needle = query.trim().toUpperCase();
 	if (!needle) return items;
@@ -326,8 +238,6 @@ export function rankByQuery<T extends { text: string }>(items: T[], query: strin
 			starts.push(item);
 			continue;
 		}
-		// Split on anything that is not a letter or digit, so "INT./EXT."
-		// yields INT and EXT, and "L'HOMME" yields L and HOMME.
 		const words = text.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 		if (words.some((w) => w.startsWith(needle))) wordStarts.push(item);
 	}

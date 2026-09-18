@@ -18,9 +18,7 @@ const log = (...args: unknown[]) => console.log("[Slate]", ...args);
 
 export default class SlatePlugin extends Plugin {
 	settings: SlateSettings;
-	/** CodeMirror save binding replaced so the keyboard path reaches the hook. */
 	private originalCodeMirrorSave: (() => unknown) | null = null;
-	/** Undoes whichever callback shape the save command turned out to use. */
 	private restoreSaveCommand: (() => void) | null = null;
 
 	/** Ollama host to talk to, defaulting when the setting is blank. */
@@ -33,7 +31,6 @@ export default class SlatePlugin extends Plugin {
 		this.addSettingTab(new SlateSettingTab(this.app, this));
 		this.registerFountainSupport();
 
-		// ── Command: Generate shot breakdown ─────────────────────────
 		this.addCommand({
 			id: "generate-shot-breakdown",
 			name: "Generate shot breakdown",
@@ -43,8 +40,7 @@ export default class SlatePlugin extends Plugin {
 					new Notice("Slate: No active file.");
 					return;
 				}
-				// A script is always Fountain. Prose or markdown goes through
-				// "Convert to Fountain" first, which is the only way in.
+				// A script is always Fountain; "Convert to Fountain" is the only way in.
 				if (activeFile.extension !== FOUNTAIN_EXTENSION) {
 					new Notice(
 						`Slate: this needs a .${FOUNTAIN_EXTENSION} script. Run "Convert to Fountain" on this note first.`,
@@ -66,7 +62,7 @@ export default class SlatePlugin extends Plugin {
 			},
 		});
 
-		// ── Command: Convert to Fountain ─────────────────────────────
+		// Command: Convert to Fountain.
 		this.addCommand({
 			id: "convert-to-fountain",
 			name: "Convert to Fountain",
@@ -116,8 +112,6 @@ export default class SlatePlugin extends Plugin {
 			},
 		});
 
-		// ── Command: Generate storyboard prompts ─────────────────────
-		// Run from Breakdown.md — its parent is the scene root.
 		this.addCommand({
 			id: "generate-storyboard-prompts",
 			name: "Generate storyboard prompts",
@@ -184,8 +178,6 @@ export default class SlatePlugin extends Plugin {
 			},
 		});
 
-		// ── Command: Generate storyboard ─────────────────────────────
-		// Run from Breakdown.md, whose parent folder is the scene root.
 		this.addCommand({
 			id: "generate-storyboard-images",
 			name: "Generate storyboard",
@@ -223,10 +215,6 @@ export default class SlatePlugin extends Plugin {
 			},
 		});
 
-		// ── Command: Generate storyboard from script ─────────────────
-		// Both steps in one go: break the active script note down into shots, then
-		// render the storyboard from those shots without a detour through
-		// Breakdown.md. The breakdown note is still written and opened on the way.
 		this.addCommand({
 			id: "generate-storyboard-from-script",
 			name: "Generate storyboard from script",
@@ -236,8 +224,7 @@ export default class SlatePlugin extends Plugin {
 					new Notice("Slate: No active file.");
 					return;
 				}
-				// A script is always Fountain. Prose or markdown goes through
-				// "Convert to Fountain" first, which is the only way in.
+				// A script is always Fountain; "Convert to Fountain" is the only way in.
 				if (activeFile.extension !== FOUNTAIN_EXTENSION) {
 					new Notice(
 						`Slate: this needs a .${FOUNTAIN_EXTENSION} script. Run "Convert to Fountain" on this note first.`,
@@ -294,13 +281,7 @@ export default class SlatePlugin extends Plugin {
 			log(`Could not claim .${FOUNTAIN_EXTENSION} files, another plugin owns them.`, err);
 		}
 
-		// Losing the extension is silent otherwise: the other plugin's view opens,
-		// its formatting shows, and Slate's looks broken rather than absent. Say
-		// so once at load, where it can actually be acted on.
-		//
-		// The owner is named because "another plugin" sends people hunting, and
-		// the plugin that wins may have no settings tab, which makes it invisible
-		// in the place they will look first.
+		// Losing the extension is silent: the other plugin opens and Slate looks broken.
 		if (!ownsExtension) {
 			const owner = this.fountainExtensionOwner();
 			new Notice(
@@ -310,9 +291,7 @@ export default class SlatePlugin extends Plugin {
 			);
 		}
 		this.registerEditorExtension(fountainEditorExtension(this.app));
-		// Reading mode does not go through CodeMirror, so it needs its own pass.
 		this.registerMarkdownPostProcessor(fountainReadingProcessor(this.app));
-		// Completions for cues, locations, times of day, and scene prefixes.
 		this.registerEditorSuggest(new FountainSuggest(this.app));
 		this.hookSaveCommand();
 
@@ -357,12 +336,6 @@ export default class SlatePlugin extends Plugin {
 		}
 	}
 
-	/**
-	 * Run the formatter over one screenplay. Returns whether anything changed.
-	 *
-	 * Goes through the editor when the file is open so the cursor and scroll
-	 * position survive. Falls back to the vault for a file that is not on screen.
-	 */
 	private async formatFountainFile(file: TFile): Promise<boolean> {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (view?.file?.path === file.path) return formatInEditor(view.editor);
@@ -384,11 +357,6 @@ export default class SlatePlugin extends Plugin {
 	private hookSaveCommand(): void {
 		const commands = (this.app as any).commands;
 
-		// Cmd/Ctrl+S inside the editor is handled by CodeMirror's own save
-		// command, which does not route through app.commands, so wrapping the
-		// command alone only ever fires from the palette. This redirect is done
-		// first and unconditionally: it must not be skipped just because the
-		// command turns out to have a shape we cannot wrap.
 		const adapter = (window as any).CodeMirrorAdapter;
 		if (adapter?.commands) {
 			this.originalCodeMirrorSave = adapter.commands.save ?? null;
@@ -403,8 +371,7 @@ export default class SlatePlugin extends Plugin {
 			return;
 		}
 
-		// Which of these Obsidian uses is not documented and has changed before,
-		// so the shape is logged rather than assumed.
+		// Undocumented and changed before, so log the shape rather than assume it.
 		log("editor:save-file shape:", {
 			callback: typeof saveCommand.callback,
 			checkCallback: typeof saveCommand.checkCallback,
@@ -483,26 +450,18 @@ export default class SlatePlugin extends Plugin {
 		return extractRoster(parseFountain(await this.app.vault.read(script)));
 	}
 
-	/**
-	 * Break a script note into shots and write Breakdown.md into its scene folder.
-	 *
-	 * Returns the shots alongside the scene folder they belong to, so a caller can
-	 * carry straight on to the storyboard instead of re-parsing the markdown table.
-	 */
 	private async runShotBreakdown(
 		scriptFile: TFile,
 		notice: Notice
 	): Promise<{ shots: Shot[]; roster: string[]; breakdownFile: TFile; sceneVaultPath: string }> {
 		const source = await this.app.vault.read(scriptFile);
-		// Notes and boneyard are annotations the spec drops from output, so the
-		// model never sees them.
+		// Notes and boneyard are dropped by the spec, so the model never sees them.
 		const scriptText = toPlainScript(source);
 		if (!scriptText) {
 			throw new Error("The current note is empty.");
 		}
 
-		// The cast comes from the script's own structure: who speaks, and who is
-		// introduced in capitals. A Fountain script declares no links.
+		// The cast comes from the script structure; Fountain declares no links.
 		const parsed = parseFountain(source);
 		const roster = extractRoster(parsed);
 		const locations = parsed.locations;
@@ -529,11 +488,9 @@ export default class SlatePlugin extends Plugin {
 			shots.push(...chunkShots);
 		}
 
-		// Renumber shots sequentially across all chunks.
 		shots = shots.map((s, i) => ({ ...s, number: i + 1 }));
 		log(`Breakdown complete: ${shots.length} total shots.`);
 
-		// Output: {output folder}/{basename}/Breakdown.md
 		const baseName = scriptFile.basename;
 		const folder = resolveOutputFolder(scriptFile, this.settings.breakdownOutputFolder);
 		const sceneVaultPath = normalizePath(`${folder}/${baseName}`);
@@ -541,9 +498,6 @@ export default class SlatePlugin extends Plugin {
 
 		await ensureVaultFolder(sceneVaultPath, this.app);
 
-		// Only names with a note behind them are linked. The caps convention that
-		// disambiguates the script does not survive into the model's prose, so
-		// note existence is what stops a common noun becoming a link here.
 		const linkable = [...roster, ...locations].filter((name) =>
 			Boolean(this.app.metadataCache.getFirstLinkpathDest(name, scriptFile.path))
 		);
@@ -551,9 +505,7 @@ export default class SlatePlugin extends Plugin {
 		const body = inlineTitle(this.app)
 			? table
 			: `# ${baseName} - Shot breakdown\n\n${table}`;
-		// The script is recorded so the standalone storyboard commands can
-		// rebuild the cast roster. A Fountain script declares no links, so the
-		// breakdown table alone no longer carries enough to resolve names.
+		// Recorded so the standalone storyboard commands can rebuild the cast roster.
 		const content = `---\nscript: "${scriptFile.path}"\n---\n\n${body}`;
 
 		const existing = this.app.vault.getAbstractFileByPath(breakdownVaultPath);
@@ -568,10 +520,6 @@ export default class SlatePlugin extends Plugin {
 		return { shots, roster, breakdownFile, sceneVaultPath };
 	}
 
-	/**
-	 * Write the prompt files and render an image for every shot into the scene
-	 * folder, then either open the gallery note or composite the tiled PNG.
-	 */
 	private async runStoryboard(
 		shots: Shot[],
 		roster: string[],
@@ -594,7 +542,6 @@ export default class SlatePlugin extends Plugin {
 		const tempDir = await mkdtemp(join(tmpdir(), "slate-"));
 
 		try {
-			// 1. Resolve wikilinks
 			notice.setMessage("Slate: Collecting links…");
 			const linkContents = await collectLinkContents(shots, roster, this.app);
 			log(`Found ${linkContents.length} wikilink(s) to summarize.`);
@@ -609,15 +556,9 @@ export default class SlatePlugin extends Plugin {
 			);
 			log(`Link summarization done: ${Object.keys(linkSummaries).length} summary/summaries.`);
 
-			// 2. Build per-shot names and prompts
 			const shotNames = shots.map((s) =>
 				(this.settings.storyboardImageName || "Shot #").replace("#", String(s.number))
 			);
-
-			// Build natural-language prompts for FLUX's T5 encoder.
-			// Order: character appearances, subject+action, framing, dialog.
-			// FLUX weights earlier tokens more heavily, so subject comes first.
-			// Wikilinks are stripped - mflux has no knowledge of them.
 
 			const resolvedDescriptions = shots.map((s) => {
 				const shotText = `${s.scene} ${s.action} ${s.description} ${s.dialog ?? ""}`;
@@ -626,18 +567,14 @@ export default class SlatePlugin extends Plugin {
 
 				const sentences: string[] = [];
 
-				// 1. Character visual descriptions - who is in the frame.
 				if (featured.length > 0) {
 					sentences.push(featured.map(([, summary]) => summary).join(" "));
 				}
 
-				// 2. Action + visual description as natural prose (subject front-loaded).
 				sentences.push(`${stripLinks(s.action)} ${stripLinks(s.description)}`.trim());
 
-				// 3. Camera framing - after subject so FLUX weights subject first.
 				sentences.push(`Framing: ${normalizeDashes(stripLinks(s.camera))}.`);
 
-				// 4. Dialog display instruction.
 				if (s.dialog) {
 					sentences.push(`Display this spoken line as legible on-screen text: "${stripLinks(s.dialog)}"`);
 				}
@@ -645,7 +582,6 @@ export default class SlatePlugin extends Plugin {
 				return sentences.join(" ");
 			});
 
-			// 3. Always write prompt files into Prompts/
 			for (let i = 0; i < shots.length; i++) {
 				const promptVaultPath = normalizePath(`${promptsVaultPath}/${shotNames[i]}.md`);
 				const promptContent = buildShotPrompt(shots[i], linkSummaries, this.settings, shotNames[i], rendersVaultPath, sceneVaultPath);
@@ -659,7 +595,6 @@ export default class SlatePlugin extends Plugin {
 
 			const outputAsImage = this.settings.storyboardOutputType === "image";
 
-			// 4. Note mode: write the gallery note up front
 			if (!outputAsImage) {
 				const noteContent = inlineTitle(this.app)
 					? buildGalleryNote(rendersVaultPath)
@@ -675,7 +610,6 @@ export default class SlatePlugin extends Plugin {
 				await this.app.workspace.getLeaf(false).openFile(storyboardFile);
 			}
 
-			// 5. Generate images into temp dir, copy each to the Storyboard folder
 			log(`Starting image generation: ${shots.length} shot(s) via mflux (${this.settings.mfluxModel}).`);
 			const generatedImages = await generateStoryboardImages(
 				shots,
@@ -690,7 +624,6 @@ export default class SlatePlugin extends Plugin {
 				resolvedDescriptions
 			);
 
-			// 6. Image mode: composite all shots into a single tiled PNG
 			if (outputAsImage) {
 				notice.setMessage("Slate: Compositing storyboard image…");
 				const imagePaths = generatedImages.map((_, i) =>
@@ -726,20 +659,6 @@ export default class SlatePlugin extends Plugin {
 	}
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Format an open editor in place.
- *
- * The formatted text is applied as the smallest edit that produces it, rather
- * than by replacing the whole document. Replacing everything rebuilds the
- * editor, which drops the scroll position and the undo history and makes the
- * view jump to somewhere unrelated. A narrow edit is mapped through by the
- * editor itself, so the cursor and viewport need no restoring at all.
- *
- * Shared by the command and the save hook, which differ only in how they find
- * the file, not in what they do to it.
- */
 function formatInEditor(editor: Editor): boolean {
 	const source = editor.getValue();
 	const edit = minimalEdit(source, formatFountain(source));
@@ -749,30 +668,19 @@ function formatInEditor(editor: Editor): boolean {
 	return true;
 }
 
-/** Surface a failure to the user and log the full error to the console. */
 function reportError(err: unknown): void {
 	new Notice(`Slate error: ${err instanceof Error ? err.message : String(err)}`, 8000);
 	console.error("[Slate]", err);
 }
 
-/**
- * Resolve the vault-relative parent folder for a new scene folder.
- *
- * Rules (matches the setting description):
- *  - Empty string  → same folder as the source file.
- *  - Starts with / → vault-root-relative (the leading slash is stripped).
- *  - Anything else → relative to the source file's folder.
- */
 function resolveOutputFolder(sourceFile: TFile, outputFolderSetting: string): string {
 	const raw = outputFolderSetting.trim();
 	if (!raw) {
 		return sourceFile.parent?.path ?? "";
 	}
 	if (raw.startsWith("/")) {
-		// Vault-root path — strip the leading slash so normalizePath works correctly.
 		return normalizePath(raw.slice(1));
 	}
-	// Relative to the source file's folder.
 	const sourceFolder = sourceFile.parent?.path ?? "";
 	return normalizePath(sourceFolder ? `${sourceFolder}/${raw}` : raw);
 }
@@ -787,7 +695,6 @@ const STRIP_LINKS_RE = /\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g;
 const stripLinks = (text: string) => text.replace(STRIP_LINKS_RE, "$1");
 const normalizeDashes = (text: string) => text.replace(/\s*[—–]\s*/g, " - ");
 
-/** Build the markdown content for a single shot's prompt file. */
 function buildShotPrompt(
 	shot: Shot,
 	linkSummaries: Record<string, string>,
@@ -822,12 +729,6 @@ function buildShotPrompt(
 	return `\`\`\`\n${body.join("\n\n")}\n\`\`\`\n\n${imageEmbed}\n\n${breakdownLink}`;
 }
 
-/**
- * Render the breakdown table, linking the cast and locations on the way out.
- *
- * The camera column is left alone: it holds shot sizes and movement, never a
- * name, and linking a stray word there would be noise.
- */
 function buildMarkdownTable(shots: Shot[], names: string[]): string {
 	const header =
 		"| # | Scene | Camera | Action | Description | Dialog |\n" +
@@ -850,7 +751,6 @@ function inlineTitle(app: App): boolean {
 	return (app.vault as any).config?.showInlineTitle !== false;
 }
 
-/** Build an img-gallery note pointing at the flat Storyboard folder. */
 function buildGalleryNote(storyboardFolderVaultPath: string): string {
 	return `\`\`\`img-gallery\ntype: vertical\nsort: asc\ncolumns: 1\npath: "${storyboardFolderVaultPath}"\n\`\`\``;
 }

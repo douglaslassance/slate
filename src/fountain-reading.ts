@@ -18,10 +18,6 @@ import { extractRoster, findMentions, type Mention } from "./fountain-entities.t
 
 export const FOUNTAIN_EXTENSION = "fountain";
 
-/**
- * Last parse, kept because a post processor is called once per block and every
- * call would otherwise reparse the whole script.
- */
 let cached: { source: string; script: Script; mentions: Mention[] } | null = null;
 
 function analyse(source: string, app: App, sourcePath: string) {
@@ -35,14 +31,12 @@ function analyse(source: string, app: App, sourcePath: string) {
 	return cached;
 }
 
-/** Spans to mark up inside one line, in document order and non-overlapping. */
 interface Span {
 	start: number;
 	end: number;
 	render: (parent: HTMLElement, text: string) => void;
 }
 
-/** How many characters of marker sit either side of an emphasis span. */
 const EMPHASIS_MARKER: Record<string, number> = {
 	"bold-italic": 3,
 	bold: 2,
@@ -50,14 +44,6 @@ const EMPHASIS_MARKER: Record<string, number> = {
 	underline: 1,
 };
 
-/**
- * The part of a line that actually prints.
- *
- * Reading mode is the rendered view, so the characters that exist only to tell
- * the parser what an element is should not survive into it. Forced element
- * markers come off the front, and the brackets around centered text come off
- * both ends.
- */
 function visibleRange(el: Element): { start: number; end: number } {
 	const text = el.text;
 	let start = 0;
@@ -88,7 +74,6 @@ function visibleRange(el: Element): { start: number; end: number } {
 		start = text.indexOf("=") + 1;
 	}
 
-	// Skip the space that usually follows a marker.
 	while (start < end && text[start] === " ") start++;
 
 	return { start: el.start + start, end: el.start + end };
@@ -103,7 +88,6 @@ function spansFor(
 	const spans: Span[] = [];
 
 	// Notes do not print, per the spec, so they are dropped rather than dimmed.
-	// An empty renderer removes the text without disturbing the offsets.
 	for (const note of notes) {
 		if (note.end <= visible.start || note.start >= visible.end) continue;
 		spans.push({
@@ -121,8 +105,6 @@ function spansFor(
 			start: span.start,
 			end: span.end,
 			render: (parent, text) => {
-				// The markers exist to say what the text is; the rendered view
-				// shows what it means instead.
 				const inner = text.slice(marker, text.length - marker);
 				const node = parent.createEl(tag, { text: inner });
 				if (span.kind === "bold-italic") node.addClass("slate-fountain-bold-italic");
@@ -135,8 +117,6 @@ function spansFor(
 		spans.push({
 			start: mention.start,
 			end: mention.end,
-			// A real internal link, so hover preview and click behave exactly
-			// as they do anywhere else in the vault.
 			render: (parent, text) => {
 				const a = parent.createEl("a", { cls: "internal-link slate-fountain-entity", text });
 				a.setAttribute("href", mention.name);
@@ -147,8 +127,6 @@ function spansFor(
 
 	spans.sort((a, b) => a.start - b.start || b.end - a.end);
 
-	// Drop anything overlapping a span already taken, so a name inside a note
-	// or inside a bold run does not produce two competing pieces of markup.
 	const kept: Span[] = [];
 	let cursor = -1;
 	for (const span of spans) {
@@ -159,7 +137,6 @@ function spansFor(
 	return kept;
 }
 
-/** Render one element's printing text, applying links and emphasis. */
 function renderText(
 	parent: HTMLElement,
 	el: Element,
@@ -193,14 +170,10 @@ export function fountainReadingProcessor(app: App) {
 
 		const { script, mentions } = analyse(section.text, app, ctx.sourcePath);
 
-		// Only the elements this block covers. Everything else belongs to
-		// another call.
 		const mine = script.elements.filter(
 			(e) => e.line >= section.lineStart && e.line <= section.lineEnd
 		);
 		if (mine.length === 0) {
-			// The block holds nothing the parser kept, a note on its own line
-			// or a boneyard span, so it should not print as stray markdown.
 			el.empty();
 			return;
 		}

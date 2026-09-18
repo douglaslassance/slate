@@ -24,7 +24,6 @@ test("a plain Hugging Face repo passes through", () => {
 });
 
 test("a Hugging Face repo with dots in the name passes through", () => {
-	// The old !includes(".") guard broke exactly this case.
 	assert.equal(
 		resolveLoraReference("artificialguybr/StudioGhibli.Redmond", VAULT),
 		"artificialguybr/StudioGhibli.Redmond"
@@ -58,7 +57,6 @@ test("other weight suffixes are treated as local files", () => {
 });
 
 test("a weight suffix wins over the repo shape", () => {
-	// One slash and no colon looks like a repo, but the suffix says local file.
 	assert.equal(
 		resolveLoraReference("LoRAs/style.safetensors", VAULT),
 		"/vault/LoRAs/style.safetensors"

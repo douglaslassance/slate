@@ -47,8 +47,6 @@ test("chunking loses no words", () => {
 });
 
 test("a forced sub-slug is a boundary too", () => {
-	// Boundaries come from the parse, so ".DERRIÈRE LE RIDEAU" counts as a
-	// scene heading the same way an INT. line does.
 	const script = [
 		"INT. KITCHEN - DAY",
 		"A kettle boils. ".repeat(40),
@@ -61,8 +59,7 @@ test("a forced sub-slug is a boundary too", () => {
 });
 
 test("markdown headings are no longer boundaries", () => {
-	// A script is always Fountain now, and "## INT." is a section there, not a
-	// scene heading. Prose goes through "Convert to Fountain" first.
+	// "## INT." is a section in Fountain, not a scene heading.
 	const script = [
 		"## INT. KITCHEN - DAY",
 		"A kettle boils. ".repeat(40),
@@ -82,7 +79,6 @@ test("a single scene longer than the cap is never split", () => {
 test("page count follows the 250 words per page convention", () => {
 	assert.equal(estimatePageCount("word ".repeat(250)), 1);
 	assert.equal(estimatePageCount("word ".repeat(500)), 2);
-	// Anything shorter than half a page still counts as half a page.
 	assert.equal(estimatePageCount("word"), 0.5);
 });
 

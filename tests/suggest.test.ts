@@ -15,13 +15,10 @@ import { fixture } from "./helpers.ts";
 const vocab = (src: string) => buildVocabulary(parseFountain(src));
 
 test("the built-in times are offered even in an empty script", () => {
-	// A page with no scene headings yet still needs somewhere to start.
 	assert.deepEqual(vocab("Rain falls.").times, DEFAULT_TIMES);
 });
 
 test("the script's own words come before the built-in ones", () => {
-	// A French script leads with its own vocabulary rather than burying it
-	// under a list it will never use.
 	const times = vocab("INT. TOILETTES - JOUR\n\nUn beat.").times;
 	assert.equal(times[0], "JOUR");
 	assert.ok(times.includes("CONTINUOUS"), "the built-ins were dropped");
@@ -72,7 +69,6 @@ test("locations and characters come through for completion", () => {
 });
 
 test("a character who never speaks is still offered", () => {
-	// Same roster the links use, so completion covers a wordless script.
 	const src = "INT. PALAIS - JOUR\n\nEntre LE ROI KAGI, quarante ans.";
 	assert.deepEqual(vocab(src).characters, ["LE ROI KAGI"]);
 });
@@ -99,19 +95,14 @@ test("the fixture yields its own vocabulary", () => {
 	assert.equal(v.times[0], "NIGHT");
 });
 
-// ── Classement des suggestions ──────────────────────────────────────────────
-
 const rank = (names: string[], query: string) =>
 	rankByQuery(names.map((text) => ({ text })), query).map((s) => s.text);
 
 test("a query never matches the middle of a word", () => {
-	// "IN" inside "MÉDECIN" was offering the doctor when typing a scene prefix.
 	assert.deepEqual(rank(["INT.", "LE MÉDECIN ROYAL"], "IN"), ["INT."]);
 });
 
 test("a query does match the start of an inner word", () => {
-	// Names here are several words long, so reaching CHAMBELLAN by typing
-	// CHAM is the whole point.
 	assert.deepEqual(rank(["LE GRAND CHAMBELLAN"], "CHAM"), ["LE GRAND CHAMBELLAN"]);
 });
 
