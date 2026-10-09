@@ -6,5 +6,6 @@
 	"description": "Generate shot breakdowns from scripts using Ollama, then create storyboard images using mflux.",
 	"author": "Douglas Lassance",
 	"authorUrl": "",
+	"fundingUrl": "https://github.com/sponsors/douglaslassance",
 	"isDesktopOnly": true
 }
