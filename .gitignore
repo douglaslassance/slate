@@ -13,3 +13,6 @@ dist/
 
 # Claude Code local state
 .claude/
+
+# Obsidian plugin settings (per-vault user config)
+data.json
